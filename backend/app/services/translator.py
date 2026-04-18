@@ -13,8 +13,8 @@ def get_client() -> AsyncOpenAI:
     global _client
     if _client is None:
         _client = AsyncOpenAI(
-            api_key=settings.API2D_API_KEY,
-            base_url=settings.API2D_BASE_URL,
+            api_key=settings.DEEPSEEK_API_KEY,
+            base_url=settings.DEEPSEEK_BASE_URL,
         )
     return _client
 

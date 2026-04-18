@@ -7,10 +7,10 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://steiner:password@db:5432/steiner_reader"
 
-    # Translation (api2d.net)
-    API2D_API_KEY: str = ""
-    API2D_BASE_URL: str = "https://openai.api2d.net/v1"
-    TRANSLATION_MODEL: str = "gpt-4o"
+    # Translation (DeepSeek)
+    DEEPSEEK_API_KEY: str = ""
+    DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
+    TRANSLATION_MODEL: str = "deepseek-chat"
 
     # File storage
     UPLOAD_DIR: str = "/app/uploads"
