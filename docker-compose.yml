@@ -1,0 +1,57 @@
+version: "3.9"
+
+services:
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - frontend
+      - backend
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    expose:
+      - "3000"
+    environment:
+      - API_URL=http://backend:8000
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    expose:
+      - "8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://steiner:${DB_PASSWORD}@db:5432/steiner_reader
+      - API2D_API_KEY=${API2D_API_KEY}
+      - API2D_BASE_URL=https://openai.api2d.net/v1
+      - UPLOAD_DIR=/app/uploads
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: steiner_reader
+      POSTGRES_USER: steiner
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U steiner -d steiner_reader"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  uploads:
