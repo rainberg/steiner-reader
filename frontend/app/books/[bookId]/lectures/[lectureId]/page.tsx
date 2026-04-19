@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { fetchLecture, translateLecture, getTranslationStatus, fetchLectureImages, Lecture, Sentence, LectureImage } from '@/lib/api';
+import { fetchLecture, translateLecture, getTranslationStatus, fetchLectureImages, getStoredUser, getTranslationCost, Lecture, Sentence, LectureImage, TranslationCost } from '@/lib/api';
 
 type ReadingMode = 'de-zh' | 'de-only' | 'zh-only';
 
@@ -20,6 +20,8 @@ export default function LecturePage() {
   const [translating, setTranslating] = useState(false);
   const [translateMsg, setTranslateMsg] = useState<string | null>(null);
   const [lightboxImg, setLightboxImg] = useState<string | null>(null);
+  const [costInfo, setCostInfo] = useState<TranslationCost | null>(null);
+  const [userCredits, setUserCredits] = useState<number | null>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadLecture = async () => {
@@ -32,6 +34,13 @@ export default function LecturePage() {
       setImages(imgs);
       const hasAnyTranslation = data.paragraphs.some(p => p.sentences.some(s => s.text_zh));
       if (hasAnyTranslation && mode === 'de-only') setMode('de-zh');
+
+      // Load translation cost
+      try {
+        const cost = await getTranslationCost(lectureId);
+        setCostInfo(cost);
+        if (cost.user_credits !== null) setUserCredits(cost.user_credits);
+      } catch {}
     } catch {
       router.push(`/books/${bookId}`);
     } finally {
@@ -63,6 +72,12 @@ export default function LecturePage() {
   };
 
   const handleTranslate = async () => {
+    const user = getStoredUser();
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+
     setTranslating(true);
     setTranslateMsg('⏳ 启动翻译...');
     try {
@@ -73,12 +88,17 @@ export default function LecturePage() {
         await loadLecture();
         setMode('de-zh');
       } else {
-        setTranslateMsg(`⏳ 翻译中: 0/${res.total} 句`);
+        setTranslateMsg(`⏳ 翻译中: 0/${res.total} 句 (消耗 ${res.cost} 点)`);
+        if (res.credits !== undefined) setUserCredits(res.credits);
         startPolling();
       }
     } catch (err: any) {
       setTranslating(false);
-      setTranslateMsg(`❌ ${err.message}`);
+      if (err.message.includes('点数不足') || err.message.includes('请先登录')) {
+        setTranslateMsg(`❌ ${err.message}`);
+      } else {
+        setTranslateMsg(`❌ ${err.message}`);
+      }
     }
   };
 
@@ -88,6 +108,7 @@ export default function LecturePage() {
   const totalSentences = lecture.paragraphs.reduce((sum, p) => sum + p.sentences.length, 0);
   const translatedSentences = lecture.paragraphs.reduce((sum, p) => sum + p.sentences.filter(s => s.text_zh).length, 0);
   const allTranslated = translatedSentences === totalSentences && totalSentences > 0;
+  const user = getStoredUser();
 
   // Build image lookup by paragraph ID
   const imagesByParagraph: Record<number, LectureImage[]> = {};
@@ -150,14 +171,35 @@ export default function LecturePage() {
           </div>
         </div>
 
+        {/* Translate button section */}
         {!allTranslated && !translating && (
           <div className="mb-6 bg-gradient-to-r from-blue-50 to-green-50 rounded-xl p-6 border border-blue-100 text-center">
-            <p className="text-gray-600 mb-3">
-              {translatedSentences === 0 ? '本篇演讲尚未翻译，当前仅显示德语原文' : `本篇演讲已翻译 ${translatedSentences}/${totalSentences} 句`}
+            <p className="text-gray-600 mb-2">
+              {translatedSentences === 0 ? '本篇演讲尚未翻译' : `已翻译 ${translatedSentences}/${totalSentences} 句`}
             </p>
-            <button onClick={handleTranslate}
-              className="bg-blue-600 text-white px-6 py-3 rounded-lg text-base font-medium hover:bg-blue-700 transition shadow-sm"
-            >🌐 {translatedSentences === 0 ? '翻译本篇演讲' : '继续翻译'}</button>
+            {costInfo && !costInfo.already_translated && (
+              <p className="text-sm text-gray-500 mb-3">
+                翻译消耗 <span className="font-semibold text-orange-600">{costInfo.cost} 点</span>
+                {user ? (
+                  <span> · 当前余额 <span className="font-semibold">{userCredits ?? user.credits} 点</span></span>
+                ) : (
+                  <span> · <Link href="/login" className="text-blue-600 hover:underline">登录</Link>后可翻译</span>
+                )}
+              </p>
+            )}
+            <button
+              onClick={handleTranslate}
+              disabled={costInfo && user && !costInfo.can_afford ? true : undefined}
+              className={`px-6 py-3 rounded-lg text-base font-medium transition shadow-sm ${
+                !user
+                  ? 'bg-gray-400 text-white hover:bg-gray-500'
+                  : costInfo && !costInfo.can_afford
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}
+            >
+              {!user ? '🔑 登录后翻译' : costInfo && !costInfo.can_afford ? '⚡ 点数不足' : `🌐 翻译本篇 (${costInfo?.cost || 10} 点)`}
+            </button>
           </div>
         )}
 
@@ -179,35 +221,21 @@ export default function LecturePage() {
                   ))}
                 </div>
               </div>
-              {/* Inline images after this paragraph */}
               {imagesByParagraph[para.id]?.map((img) => (
                 <div key={img.id} className="mt-3 flex justify-center">
                   <div
                     className="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm cursor-pointer hover:shadow-md transition max-w-md"
                     onClick={() => setLightboxImg(`/api/images/${img.filename}`)}
                   >
-                    <img
-                      src={`/api/images/${img.filename}`}
-                      alt={`插图 (第${img.page_number}页)`}
-                      className="w-full h-auto object-contain"
-                    />
-                    <div className="px-3 py-1.5 text-xs text-gray-400 text-center">
-                      🖼️ 第 {img.page_number} 页
-                    </div>
+                    <img src={`/api/images/${img.filename}`} alt={`插图 (第${img.page_number}页)`}
+                      className="w-full h-auto object-contain" />
+                    <div className="px-3 py-1.5 text-xs text-gray-400 text-center">🖼️ 第 {img.page_number} 页</div>
                   </div>
                 </div>
               ))}
             </div>
           ))}
         </div>
-
-        {!allTranslated && !translating && (
-          <div className="mt-8 text-center">
-            <button onClick={handleTranslate}
-              className="bg-blue-600 text-white px-6 py-3 rounded-lg text-base font-medium hover:bg-blue-700 transition shadow-sm"
-            >🌐 {translatedSentences === 0 ? '翻译本篇演讲' : '继续翻译'}</button>
-          </div>
-        )}
       </div>
     </main>
   );
@@ -216,24 +244,15 @@ export default function LecturePage() {
 function SentenceView({ sentence, mode, index }: { sentence: Sentence; mode: ReadingMode; index: number }) {
   const hasTranslation = !!sentence.text_zh;
   if (mode === 'de-only') return (
-    <div className="flex">
-      <span className="text-gray-300 text-xs mr-2 mt-1 w-5 text-right select-none">{index}</span>
-      <p className="text-gray-800 leading-relaxed">{sentence.text_de}</p>
-    </div>
+    <div className="flex"><span className="text-gray-300 text-xs mr-2 mt-1 w-5 text-right select-none">{index}</span><p className="text-gray-800 leading-relaxed">{sentence.text_de}</p></div>
   );
   if (mode === 'zh-only') return (
-    <div className="flex">
-      <span className="text-gray-300 text-xs mr-2 mt-1 w-5 text-right select-none">{index}</span>
-      {hasTranslation ? <p className="text-gray-700 leading-relaxed">{sentence.text_zh}</p> : <p className="text-gray-400 italic leading-relaxed">（未翻译）</p>}
-    </div>
+    <div className="flex"><span className="text-gray-300 text-xs mr-2 mt-1 w-5 text-right select-none">{index}</span>
+      {hasTranslation ? <p className="text-gray-700 leading-relaxed">{sentence.text_zh}</p> : <p className="text-gray-400 italic">（未翻译）</p>}</div>
   );
   return (
-    <div className="flex">
-      <span className="text-gray-300 text-xs mr-2 mt-1 w-5 text-right select-none">{index}</span>
-      <div className="flex-1">
-        <p className="text-gray-800 leading-relaxed">{sentence.text_de}</p>
-        {hasTranslation && <p className="text-gray-500 text-sm mt-1 leading-relaxed">{sentence.text_zh}</p>}
-      </div>
-    </div>
+    <div className="flex"><span className="text-gray-300 text-xs mr-2 mt-1 w-5 text-right select-none">{index}</span>
+      <div className="flex-1"><p className="text-gray-800 leading-relaxed">{sentence.text_de}</p>
+        {hasTranslation && <p className="text-gray-500 text-sm mt-1 leading-relaxed">{sentence.text_zh}</p>}</div></div>
   );
 }

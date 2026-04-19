@@ -72,6 +72,8 @@ export interface BookDetail {
 export interface UploadResponse {
   book_id: number;
   message: string;
+  cost?: number;
+  credits?: number;
   ga_number: string | null;
   stats: Record<string, number>;
 }
@@ -80,6 +82,8 @@ export interface TranslateResult {
   lecture_id: number;
   status: string;
   message: string;
+  cost?: number;
+  credits?: number;
   translated: number;
   total: number;
 }
@@ -153,5 +157,104 @@ export interface LectureImage {
 export async function fetchLectureImages(lectureId: number): Promise<LectureImage[]> {
   const res = await fetch(`${API_BASE}/api/lectures/${lectureId}/images`, { cache: 'no-store' });
   if (!res.ok) throw new Error('Failed to fetch images');
+  return res.json();
+}
+
+
+// --- Auth ---
+
+export interface User {
+  id: number;
+  username: string;
+  email: string;
+  credits: number;
+}
+
+export interface AuthResponse {
+  access_token: string;
+  token_type: string;
+  user: User;
+}
+
+export interface TranslationCost {
+  lecture_id: number;
+  total: number;
+  translated: number;
+  remaining: number;
+  cost: number;
+  already_translated: boolean;
+  user_credits: number | null;
+  can_afford: boolean | null;
+}
+
+function getToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem('steiner_token');
+}
+
+export function getStoredUser(): User | null {
+  if (typeof window === 'undefined') return null;
+  const u = localStorage.getItem('steiner_user');
+  return u ? JSON.parse(u) : null;
+}
+
+export function saveAuth(data: AuthResponse) {
+  localStorage.setItem('steiner_token', data.access_token);
+  localStorage.setItem('steiner_user', JSON.stringify(data.user));
+}
+
+export function clearAuth() {
+  localStorage.removeItem('steiner_token');
+  localStorage.removeItem('steiner_user');
+}
+
+async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  const token = getToken();
+  const headers: Record<string, string> = {
+    ...(options.headers as Record<string, string> || {}),
+  };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  return fetch(`${API_BASE}${url}`, { ...options, headers });
+}
+
+export async function register(username: string, email: string, password: string): Promise<AuthResponse> {
+  const res = await fetch(`${API_BASE}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, email, password }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '注册失败' }));
+    throw new Error(err.detail || '注册失败');
+  }
+  const data = await res.json();
+  saveAuth(data);
+  return data;
+}
+
+export async function login(username: string, password: string): Promise<AuthResponse> {
+  const res = await fetch(`${API_BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '登录失败' }));
+    throw new Error(err.detail || '登录失败');
+  }
+  const data = await res.json();
+  saveAuth(data);
+  return data;
+}
+
+export async function fetchMe(): Promise<User> {
+  const res = await authFetch('/api/auth/me');
+  if (!res.ok) throw new Error('未登录');
+  return res.json();
+}
+
+export async function getTranslationCost(lectureId: number): Promise<TranslationCost> {
+  const res = await authFetch(`/api/lectures/${lectureId}/translation-cost`);
+  if (!res.ok) throw new Error('获取翻译费用失败');
   return res.json();
 }
