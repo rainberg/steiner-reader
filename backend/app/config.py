@@ -7,10 +7,8 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://steiner:password@db:5432/steiner_reader"
 
-    # Translation (DeepSeek)
-    DEEPSEEK_API_KEY: str = ""
-    DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
-    TRANSLATION_MODEL: str = "deepseek-chat"
+    # Translation (Google Translate — free, no API key needed)
+    TRANSLATION_ENGINE: str = "google"  # google or deepseek
 
     # File storage
     UPLOAD_DIR: str = "/app/uploads"
