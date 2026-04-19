@@ -5,7 +5,7 @@ from typing import Optional
 from pydantic import BaseModel
 
 
-# ─── Sentence ──
+# --- Sentence ---
 
 class SentenceBase(BaseModel):
     text_de: str
@@ -25,7 +25,7 @@ class SentenceResponse(SentenceBase):
         from_attributes = True
 
 
-# ─── Paragraph ──
+# --- Paragraph ---
 
 class ParagraphBase(BaseModel):
     order_index: int
@@ -39,7 +39,7 @@ class ParagraphResponse(ParagraphBase):
         from_attributes = True
 
 
-# ─── Lecture ──
+# --- Lecture ---
 
 class LectureBase(BaseModel):
     title_de: Optional[str] = None
@@ -53,9 +53,21 @@ class LectureCreate(LectureBase):
 
 
 class LectureResponse(LectureBase):
+    """Full lecture with all paragraphs and sentences (for reader page)."""
     id: int
     book_id: int
     paragraphs: list[ParagraphResponse] = []
+
+    class Config:
+        from_attributes = True
+
+
+class LectureListItem(LectureBase):
+    """Lightweight lecture for book detail / TOC — no paragraphs/sentences."""
+    id: int
+    book_id: int
+    sentence_count: int = 0
+    translated_count: int = 0
 
     class Config:
         from_attributes = True
@@ -74,7 +86,7 @@ class LectureSummary(BaseModel):
         from_attributes = True
 
 
-# ─── Book ──
+# --- Book ---
 
 class BookBase(BaseModel):
     ga_number: Optional[str] = None
@@ -98,11 +110,11 @@ class BookResponse(BookBase):
 
 
 class BookDetail(BookResponse):
-    """Full book with all lectures, paragraphs, sentences."""
-    lectures: list[LectureResponse] = []
+    """Book detail for TOC page — lectures include translation counts but no sentences."""
+    lectures: list[LectureListItem] = []
 
 
-# ─── Upload ──
+# --- Upload ---
 
 class UploadResponse(BaseModel):
     book_id: int
@@ -111,7 +123,7 @@ class UploadResponse(BaseModel):
     stats: dict = {}
 
 
-# ─── Translation ──
+# --- Translation ---
 
 class TranslationJobResponse(BaseModel):
     id: int
