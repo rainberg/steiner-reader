@@ -18,7 +18,8 @@ class Book(Base):
     cover_url = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    lectures = relationship("Lecture", back_populates="book", cascade="all, delete-orphan")
+    lectures = relationship("Lecture", back_populates="book", cascade="all, delete-orphan",
+                            foreign_keys="Lecture.book_id")
     translation_jobs = relationship("TranslationJob", back_populates="book", cascade="all, delete-orphan")
 
 
@@ -33,8 +34,11 @@ class Lecture(Base):
     order_index = Column(Integer, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    book = relationship("Book", back_populates="lectures")
-    paragraphs = relationship("Paragraph", back_populates="lecture", cascade="all, delete-orphan")
+    book = relationship("Book", back_populates="lectures", foreign_keys=[book_id])
+    paragraphs = relationship("Paragraph", back_populates="lecture", cascade="all, delete-orphan",
+                              foreign_keys="Paragraph.lecture_id")
+    images = relationship("LectureImage", back_populates="lecture", cascade="all, delete-orphan",
+                          foreign_keys="LectureImage.lecture_id")
 
 
 class Paragraph(Base):
@@ -45,8 +49,9 @@ class Paragraph(Base):
     order_index = Column(Integer, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    lecture = relationship("Lecture", back_populates="paragraphs")
-    sentences = relationship("Sentence", back_populates="paragraph", cascade="all, delete-orphan")
+    lecture = relationship("Lecture", back_populates="paragraphs", foreign_keys=[lecture_id])
+    sentences = relationship("Sentence", back_populates="paragraph", cascade="all, delete-orphan",
+                             foreign_keys="Sentence.paragraph_id")
 
 
 class Sentence(Base):
@@ -59,7 +64,24 @@ class Sentence(Base):
     text_zh = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    paragraph = relationship("Paragraph", back_populates="sentences")
+    paragraph = relationship("Paragraph", back_populates="sentences", foreign_keys=[paragraph_id])
+
+
+class LectureImage(Base):
+    __tablename__ = "lecture_images"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    lecture_id = Column(Integer, ForeignKey("lectures.id", ondelete="CASCADE"), nullable=False, index=True)
+    filename = Column(String(255), nullable=False)
+    page_number = Column(Integer, nullable=False)
+    width = Column(Integer)
+    height = Column(Integer)
+    caption = Column(Text)
+    order_index = Column(Integer, default=0)
+    after_paragraph_id = Column(Integer, ForeignKey("paragraphs.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    lecture = relationship("Lecture", back_populates="images", foreign_keys=[lecture_id])
 
 
 class TranslationJob(Base):
@@ -67,7 +89,7 @@ class TranslationJob(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     book_id = Column(Integer, ForeignKey("books.id", ondelete="CASCADE"), nullable=False)
-    status = Column(String(20), default="pending")  # pending/running/completed/failed
+    status = Column(String(20), default="pending")
     total_sentences = Column(Integer)
     translated_count = Column(Integer, default=0)
     error_message = Column(Text)

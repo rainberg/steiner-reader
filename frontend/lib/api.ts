@@ -137,3 +137,21 @@ export async function getTranslationStatus(lectureId: number): Promise<Translati
   if (!res.ok) throw new Error('Failed to fetch status');
   return res.json();
 }
+
+
+export interface LectureImage {
+  id: number;
+  lecture_id: number;
+  filename: string;
+  url: string;
+  page_number: number;
+  width: number;
+  height: number;
+  after_paragraph_id: number | null;
+}
+
+export async function fetchLectureImages(lectureId: number): Promise<LectureImage[]> {
+  const res = await fetch(`${API_BASE}/api/lectures/${lectureId}/images`, { cache: 'no-store' });
+  if (!res.ok) throw new Error('Failed to fetch images');
+  return res.json();
+}
