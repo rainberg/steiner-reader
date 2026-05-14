@@ -304,12 +304,30 @@ export default function LecturePage() {
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded">请及时下载已解锁内容。本网站不保证长期运行或永久提供访问。</span>
-                <button
-                  onClick={handleDownload}
-                  className="px-4 py-2 rounded-lg text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-md border border-emerald-700"
+                <a
+                  href={`/api/lectures/${lectureId}/download`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    await handleDownload();
+                  }}
+                  style={{
+                    display: 'inline-block',
+                    padding: '8px 16px',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: 700,
+                    color: '#fff',
+                    backgroundColor: '#059669',
+                    border: '1px solid #047857',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
+                    cursor: 'pointer',
+                    textDecoration: 'none',
+                  }}
                 >
                   下载
-                </button>
+                </a>
               </div>
             </div>
           </div>
@@ -371,12 +389,30 @@ export default function LecturePage() {
         {isPublished && hasDownloadAccess && (
           <div className="mt-8 text-center">
             <span className="text-xs text-amber-600 block mb-2">请及时下载已解锁内容。本网站不保证长期运行或永久提供访问。</span>
-            <button
-              onClick={handleDownload}
-              className="inline-block px-6 py-2.5 rounded-lg text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-md border border-emerald-700"
+            <a
+              href={`/api/lectures/${lectureId}/download`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={async (e) => {
+                e.preventDefault();
+                await handleDownload();
+              }}
+              style={{
+                display: 'inline-block',
+                padding: '10px 24px',
+                borderRadius: '8px',
+                fontSize: '14px',
+                fontWeight: 700,
+                color: '#fff',
+                backgroundColor: '#059669',
+                border: '1px solid #047857',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
+                cursor: 'pointer',
+                textDecoration: 'none',
+              }}
             >
               下载
-            </button>
+            </a>
           </div>
         )}
 
