@@ -304,18 +304,18 @@ export default function LecturePage() {
                   <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded">请及时下载已解锁内容。本网站不保证长期运行或永久提供访问。</span>
                   <a
                     href={getDownloadUrl(lectureId)}
-                    className="px-4 py-2 rounded-lg text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700 transition"
+                    className="px-4 py-2 rounded-lg text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-md border border-emerald-700"
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    下载 PDF
+                    📥 下载 PDF
                   </a>
                 </div>
               ) : token ? (
                 <button
                   onClick={handlePurchaseDownload}
                   disabled={purchasing}
-                  className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition"
+                  className="px-4 py-2 rounded-lg text-sm font-bold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition shadow-md border border-blue-700"
                 >
                   {purchasing ? '购买中...' : `消耗 ${downloadCost} 点下载 PDF`}
                 </button>
@@ -386,11 +386,11 @@ export default function LecturePage() {
             <span className="text-xs text-amber-600 block mb-2">请及时下载已解锁内容。本网站不保证长期运行或永久提供访问。</span>
             <a
               href={getDownloadUrl(lectureId)}
-              className="inline-block px-6 py-2.5 rounded-lg text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-sm"
+              className="inline-block px-6 py-2.5 rounded-lg text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-md border border-emerald-700"
               target="_blank"
               rel="noopener noreferrer"
             >
-              下载 PDF
+              📥 下载 PDF
             </a>
           </div>
         )}
@@ -399,7 +399,7 @@ export default function LecturePage() {
             <button
               onClick={handlePurchaseDownload}
               disabled={purchasing}
-              className="inline-block px-6 py-2.5 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition shadow-sm"
+              className="inline-block px-6 py-2.5 rounded-lg text-sm font-bold bg-blue-600 text-white hover:bg-blue-700 transition shadow-md border border-blue-700 disabled:opacity-50"
             >
               {purchasing ? '购买中...' : `消耗 ${downloadCost} 点获得 PDF 下载权限`}
             </button>
