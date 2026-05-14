@@ -135,11 +135,13 @@ async def download_lecture_bilingual(
 </body>
 </html>"""
 
+    safe_title = "".join(c for c in title[:40] if c.isalnum() or c in " _-").strip()
     return HTMLResponse(
         content=html,
         status_code=200,
+        media_type="text/html; charset=utf-8",
         headers={
-            "Content-Disposition": f"attachment; filename=\"{title[:40]}.html\"",
+            "Content-Disposition": f"attachment; filename*=UTF-8''{safe_title}.html",
         },
     )
 
