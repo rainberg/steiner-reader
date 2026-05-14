@@ -10,7 +10,6 @@ import {
   getTranslationStatus,
   translateLecture,
   getDownloadPermission,
-  purchaseDownloadAccess,
   editSentence,
   fetchSentenceEdits,
   fetchContributions,
@@ -46,14 +45,12 @@ export default function LecturePage() {
   const [isPublished, setIsPublished] = useState(false);
   const [downloadPerm, setDownloadPerm] = useState<DownloadPermission | null>(null);
   const [contributions, setContributions] = useState<ContributionDisplay[]>([]);
-  const [downloadCost, setDownloadCost] = useState<number>(5);
   const [editTransCost, setEditTransCost] = useState<number>(2);
   const [editSourceCost, setEditSourceCost] = useState<number>(3);
   const [editingSentenceId, setEditingSentenceId] = useState<number | null>(null);
   const [editField, setEditField] = useState<'text_de' | 'text_zh'>('text_zh');
   const [editValue, setEditValue] = useState('');
   const [editMsg, setEditMsg] = useState<string | null>(null);
-  const [purchasing, setPurchasing] = useState(false);
 
   const startPolling = useCallback(() => {
     if (pollingRef.current) clearInterval(pollingRef.current);
@@ -100,7 +97,6 @@ export default function LecturePage() {
       }
 
       // Store costs from lecture response
-      if (typeof data.download_lecture_cost === 'number') setDownloadCost(data.download_lecture_cost);
       if (typeof data.edit_translation_cost === 'number') setEditTransCost(data.edit_translation_cost);
       if (typeof data.edit_source_cost === 'number') setEditSourceCost(data.edit_source_cost);
 
@@ -150,20 +146,6 @@ export default function LecturePage() {
     } catch (err: unknown) {
       setTranslating(false);
       setTranslateMsg(err instanceof Error ? err.message : '翻译失败');
-    }
-  };
-
-  const handlePurchaseDownload = async () => {
-    setPurchasing(true);
-    try {
-      const res = await purchaseDownloadAccess(lectureId);
-      setDownloadPerm({ has_permission: true, access_types: ['download_purchase'] });
-      setUserCredits(res.credits_remaining);
-      setTranslateMsg('下载权限已开通，请及时下载文件。下载链接仅在开通后一定时间内有效。');
-    } catch (err: unknown) {
-      setTranslateMsg(err instanceof Error ? err.message : '购买失败');
-    } finally {
-      setPurchasing(false);
     }
   };
 
@@ -312,41 +294,23 @@ export default function LecturePage() {
           </div>
         )}
 
-        {/* Published: Download section */}
-        {isPublished && (
+        {/* Published: Download section — only for contributors */}
+        {isPublished && hasDownloadAccess && (
           <div className="mb-6 bg-white rounded-xl shadow-sm border border-slate-100 p-5">
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div>
                 <p className="text-sm font-medium text-slate-800">下载</p>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  {hasDownloadAccess
-                    ? '下载权限已开通，请及时下载'
-                    : `消耗 ${downloadCost} 点获得下载权限`}
-                </p>
+                <p className="text-xs text-slate-500 mt-0.5">下载权限已开通，请及时下载</p>
               </div>
-              {hasDownloadAccess ? (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded">请及时下载已解锁内容。本网站不保证长期运行或永久提供访问。</span>
-                  <button
-                    onClick={handleDownload}
-                    className="px-4 py-2 rounded-lg text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-md border border-emerald-700"
-                  >
-                    下载
-                  </button>
-                </div>
-              ) : token ? (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded">请及时下载已解锁内容。本网站不保证长期运行或永久提供访问。</span>
                 <button
-                  onClick={handlePurchaseDownload}
-                  disabled={purchasing}
-                  className="px-4 py-2 rounded-lg text-sm font-bold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition shadow-md border border-blue-700"
+                  onClick={handleDownload}
+                  className="px-4 py-2 rounded-lg text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-md border border-emerald-700"
                 >
-                  {purchasing ? '购买中...' : `消耗 ${downloadCost} 点下载`}
+                  下载
                 </button>
-              ) : (
-                <Link href="/login" className="px-4 py-2 rounded-lg text-sm font-medium bg-slate-400 text-white hover:bg-slate-500 transition">
-                  登录后下载
-                </Link>
-              )}
+              </div>
             </div>
           </div>
         )}
@@ -403,30 +367,16 @@ export default function LecturePage() {
           ))}
         </div>
 
-        {/* Bottom download section — always visible when published */}
-        {isPublished && (
+        {/* Bottom download section — only for contributors */}
+        {isPublished && hasDownloadAccess && (
           <div className="mt-8 text-center">
             <span className="text-xs text-amber-600 block mb-2">请及时下载已解锁内容。本网站不保证长期运行或永久提供访问。</span>
-            {hasDownloadAccess ? (
-              <button
-                onClick={handleDownload}
-                className="inline-block px-6 py-2.5 rounded-lg text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-md border border-emerald-700"
-              >
-                下载 PDF
-              </button>
-            ) : token ? (
-              <button
-                onClick={handlePurchaseDownload}
-                disabled={purchasing}
-                className="inline-block px-6 py-2.5 rounded-lg text-sm font-bold bg-blue-600 text-white hover:bg-blue-700 transition shadow-md border border-blue-700 disabled:opacity-50"
-              >
-                {purchasing ? '购买中...' : `消耗 ${downloadCost} 点获得下载权限`}
-              </button>
-            ) : (
-              <Link href="/login" className="inline-block px-6 py-2.5 rounded-lg text-sm font-bold bg-slate-500 text-white hover:bg-slate-600 transition shadow-md">
-                登录后下载
-              </Link>
-            )}
+            <button
+              onClick={handleDownload}
+              className="inline-block px-6 py-2.5 rounded-lg text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-md border border-emerald-700"
+            >
+              下载
+            </button>
           </div>
         )}
 
