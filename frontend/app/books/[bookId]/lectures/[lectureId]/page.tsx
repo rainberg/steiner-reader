@@ -183,7 +183,7 @@ export default function LecturePage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = ''; // use server-provided filename
+      a.download = `${lecture?.title_de || 'lecture'}.html`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -317,11 +317,11 @@ export default function LecturePage() {
           <div className="mb-6 bg-white rounded-xl shadow-sm border border-slate-100 p-5">
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div>
-                <p className="text-sm font-medium text-slate-800">PDF 下载</p>
+                <p className="text-sm font-medium text-slate-800">下载</p>
                 <p className="text-xs text-slate-500 mt-0.5">
                   {hasDownloadAccess
                     ? '下载权限已开通，请及时下载'
-                    : `消耗 ${downloadCost} 点获得 PDF 下载权限`}
+                    : `消耗 ${downloadCost} 点获得下载权限`}
                 </p>
               </div>
               {hasDownloadAccess ? (
@@ -331,7 +331,7 @@ export default function LecturePage() {
                     onClick={handleDownload}
                     className="px-4 py-2 rounded-lg text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-md border border-emerald-700"
                   >
-                    下载 PDF
+                    下载
                   </button>
                 </div>
               ) : token ? (
@@ -340,7 +340,7 @@ export default function LecturePage() {
                   disabled={purchasing}
                   className="px-4 py-2 rounded-lg text-sm font-bold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition shadow-md border border-blue-700"
                 >
-                  {purchasing ? '购买中...' : `消耗 ${downloadCost} 点下载 PDF`}
+                  {purchasing ? '购买中...' : `消耗 ${downloadCost} 点下载`}
                 </button>
               ) : (
                 <Link href="/login" className="px-4 py-2 rounded-lg text-sm font-medium bg-slate-400 text-white hover:bg-slate-500 transition">
@@ -420,7 +420,7 @@ export default function LecturePage() {
                 disabled={purchasing}
                 className="inline-block px-6 py-2.5 rounded-lg text-sm font-bold bg-blue-600 text-white hover:bg-blue-700 transition shadow-md border border-blue-700 disabled:opacity-50"
               >
-                {purchasing ? '购买中...' : `消耗 ${downloadCost} 点获得 PDF 下载权限`}
+                {purchasing ? '购买中...' : `消耗 ${downloadCost} 点获得下载权限`}
               </button>
             ) : (
               <Link href="/login" className="inline-block px-6 py-2.5 rounded-lg text-sm font-bold bg-slate-500 text-white hover:bg-slate-600 transition shadow-md">
