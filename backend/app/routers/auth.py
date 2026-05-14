@@ -11,13 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
 from app.db.models import User
+from app.config import settings
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 # Security config
-SECRET_KEY = "steiner-reader-jwt-secret-change-in-production"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
+SECRET_KEY = settings.JWT_SECRET_KEY
+ALGORITHM = settings.JWT_ALGORITHM
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
@@ -44,6 +45,7 @@ class UserResponse(BaseModel):
     username: str
     email: str
     credits: int
+    is_admin: int
     created_at: datetime
 
 # --- Helpers ---
@@ -81,6 +83,13 @@ async def require_user(user: User | None = Depends(get_current_user)) -> User:
     return user
 
 
+async def require_admin(user: User = Depends(require_user)) -> User:
+    """Require admin privileges. Raises 403 if not admin."""
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+    return user
+
+
 # --- Endpoints ---
 
 @router.post("/register", response_model=TokenResponse)
@@ -115,7 +124,7 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
     token = create_token({"sub": str(user.id)})
     return TokenResponse(
         access_token=token,
-        user={"id": user.id, "username": user.username, "email": user.email, "credits": user.credits},
+        user={"id": user.id, "username": user.username, "email": user.email, "credits": user.credits, "is_admin": user.is_admin},
     )
 
 
@@ -131,7 +140,7 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     token = create_token({"sub": str(user.id)})
     return TokenResponse(
         access_token=token,
-        user={"id": user.id, "username": user.username, "email": user.email, "credits": user.credits},
+        user={"id": user.id, "username": user.username, "email": user.email, "credits": user.credits, "is_admin": user.is_admin},
     )
 
 
@@ -139,3 +148,65 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
 async def get_me(user: User = Depends(require_user)):
     """Get current user info."""
     return user
+
+
+# --- User Self-Service Endpoints ---
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
+
+class ChangeEmailRequest(BaseModel):
+    email: str
+    password: str
+
+
+@router.put("/change-password")
+async def change_password(
+    req: ChangePasswordRequest,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """修改当前用户密码"""
+    if not pwd_context.verify(req.old_password, user.password_hash):
+        raise HTTPException(400, "原密码错误")
+    if len(req.new_password) < 6:
+        raise HTTPException(400, "新密码至少6个字符")
+    if req.old_password == req.new_password:
+        raise HTTPException(400, "新密码不能与原密码相同")
+
+    user.password_hash = pwd_context.hash(req.new_password)
+    await db.commit()
+
+    return {"success": True, "message": "密码修改成功"}
+
+
+@router.put("/change-email")
+async def change_email(
+    req: ChangeEmailRequest,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """修改当前用户邮箱"""
+    if not pwd_context.verify(req.password, user.password_hash):
+        raise HTTPException(400, "密码错误")
+
+    if "@" not in req.email:
+        raise HTTPException(400, "请输入有效邮箱")
+
+    # Check if email is already taken by another user
+    existing = await db.execute(
+        select(User).where(User.email == req.email, User.id != user.id)
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(400, "该邮箱已被其他用户使用")
+
+    user.email = req.email
+    await db.commit()
+    await db.refresh(user)
+
+    return {
+        "success": True,
+        "message": "邮箱修改成功",
+        "email": user.email,
+    }

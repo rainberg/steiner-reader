@@ -11,6 +11,8 @@ services:
       - frontend
       - backend
     restart: unless-stopped
+    networks:
+      - steiner-network
 
   frontend:
     build: ./frontend
@@ -19,39 +21,29 @@ services:
     environment:
       - API_URL=http://backend:8000
     restart: unless-stopped
+    networks:
+      - steiner-network
 
   backend:
     build: ./backend
     expose:
       - "8000"
     environment:
-      - DATABASE_URL=postgresql+asyncpg://steiner:${DB_PASSWORD}@db:5432/steiner_reader
+      - DATABASE_URL=${DB_URL:-postgresql+asyncpg://steiner:st3in3r_pass_2024@steiner-postgres:5432/steiner_reader}
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
       - DEEPSEEK_BASE_URL=https://api.deepseek.com
       - UPLOAD_DIR=/app/uploads
+      - TRANSLATION_ENGINE=${TRANSLATION_ENGINE:-google}
     volumes:
       - uploads:/app/uploads
-    depends_on:
-      db:
-        condition: service_healthy
+    depends_on: []
     restart: unless-stopped
+    networks:
+      - steiner-network
 
-  db:
-    image: postgres:16
-    environment:
-      POSTGRES_DB: steiner_reader
-      POSTGRES_USER: steiner
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U steiner -d steiner_reader"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
+networks:
+  steiner-network:
+    external: true
 
 volumes:
-  pgdata:
   uploads:

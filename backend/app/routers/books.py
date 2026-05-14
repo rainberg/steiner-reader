@@ -1,15 +1,166 @@
 """Books API router."""
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, func
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db.database import get_db
 from app.db.models import Book, Lecture, Paragraph, Sentence
-from app.models.schemas import BookResponse, BookDetail, LectureResponse, LectureSummary, LectureListItem
+from app.models.schemas import BookResponse, BookDetail, BookSummary, LectureResponse, LectureSummary, LectureListItem
 
 router = APIRouter(prefix="/api/books", tags=["books"])
+
+
+@router.get("/summary", response_model=list[BookSummary])
+async def list_book_summaries(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(24, ge=1, le=200),
+    search: str = Query("", max_length=200),
+    sort_by: str = Query("created_at", pattern="^(created_at|ga_number|title_de|lecture_count)$"),
+    sort_dir: str = Query("desc", pattern="^(asc|desc)$"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get compact book rows for the homepage. Supports pagination, search, and sorting."""
+    base_cte = """
+        WITH lecture_counts AS (
+            SELECT book_id, COUNT(*) AS lecture_count
+            FROM lectures GROUP BY book_id
+        ),
+        sentence_counts AS (
+            SELECT l.book_id, COUNT(s.id) AS sentence_count
+            FROM lectures l
+            JOIN paragraphs p ON p.lecture_id = l.id
+            JOIN sentences s ON s.paragraph_id = p.id
+            GROUP BY l.book_id
+        ),
+        translated_counts AS (
+            SELECT l.book_id, COUNT(s.id) AS translated_count
+            FROM lectures l
+            JOIN paragraphs p ON p.lecture_id = l.id
+            JOIN sentences s ON s.paragraph_id = p.id
+            WHERE s.text_zh IS NOT NULL AND s.text_zh != ''
+            GROUP BY l.book_id
+        ),
+        image_counts AS (
+            SELECT l.book_id, COUNT(li.id) AS image_count
+            FROM lectures l
+            JOIN lecture_images li ON li.lecture_id = l.id
+            GROUP BY l.book_id
+        )
+    """
+    select_clause = """
+        SELECT
+            b.id, b.ga_number, b.title_de, b.title_zh, b.pdf_filename,
+            b.cover_url, b.created_at,
+            COALESCE(lc.lecture_count, 0) AS lecture_count,
+            COALESCE(sc.sentence_count, 0) AS sentence_count,
+            COALESCE(ic.image_count, 0) AS image_count,
+            COALESCE(tc.translated_count, 0) AS translated_count
+        FROM books b
+        LEFT JOIN lecture_counts lc ON lc.book_id = b.id
+        LEFT JOIN sentence_counts sc ON sc.book_id = b.id
+        LEFT JOIN image_counts ic ON ic.book_id = b.id
+        LEFT JOIN translated_counts tc ON tc.book_id = b.id
+    """
+    where = ""
+    params: dict = {}
+    if search:
+        where = " WHERE b.ga_number ILIKE :q OR b.title_de ILIKE :q OR b.title_zh ILIKE :q"
+        params["q"] = f"%{search}%"
+
+    sort_col_map = {
+        "created_at": "b.created_at",
+        "ga_number": "b.ga_number",
+        "title_de": "b.title_de",
+        "lecture_count": "lecture_count",
+    }
+    sort_col = sort_col_map.get(sort_by, "b.created_at")
+    direction = "ASC" if sort_dir == "asc" else "DESC"
+
+    offset = (page - 1) * page_size
+    query = f"{base_cte}{select_clause}{where} ORDER BY {sort_col} {direction} LIMIT :limit OFFSET :offset"
+    params["limit"] = page_size
+    params["offset"] = offset
+
+    result = await db.execute(text(query), params)
+    return [BookSummary(**dict(row._mapping)) for row in result]
+
+
+@router.get("/summary/count")
+async def book_count(
+    search: str = Query("", max_length=200),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get total book count (with optional search filter) for pagination."""
+    if search:
+        result = await db.execute(
+            text("SELECT COUNT(*) FROM books WHERE ga_number ILIKE :q OR title_de ILIKE :q OR title_zh ILIKE :q"),
+            {"q": f"%{search}%"},
+        )
+    else:
+        result = await db.execute(text("SELECT COUNT(*) FROM books"))
+    return {"count": result.scalar() or 0}
+
+
+@router.get("/groups")
+async def list_book_groups(db: AsyncSession = Depends(get_db)):
+    """Get books grouped by GA number prefix (e.g. GA010, GA020, ...)."""
+    result = await db.execute(
+        text(
+            """
+            WITH lecture_counts AS (
+                SELECT book_id, COUNT(*) AS lecture_count
+                FROM lectures GROUP BY book_id
+            ),
+            sentence_counts AS (
+                SELECT l.book_id, COUNT(s.id) AS sentence_count
+                FROM lectures l
+                JOIN paragraphs p ON p.lecture_id = l.id
+                JOIN sentences s ON s.paragraph_id = p.id
+                GROUP BY l.book_id
+            )
+            SELECT
+                b.id, b.ga_number, b.title_de, b.title_zh, b.pdf_filename,
+                b.cover_url, b.created_at,
+                COALESCE(lc.lecture_count, 0) AS lecture_count,
+                COALESCE(sc.sentence_count, 0) AS sentence_count,
+                0 AS image_count,
+                0 AS translated_count
+            FROM books b
+            LEFT JOIN lecture_counts lc ON lc.book_id = b.id
+            LEFT JOIN sentence_counts sc ON sc.book_id = b.id
+            ORDER BY b.ga_number NULLS LAST, b.title_de
+            """
+        )
+    )
+    all_books = [BookSummary(**dict(row._mapping)) for row in result]
+
+    groups: dict[str, list[BookSummary]] = {}
+    for book in all_books:
+        ga = (book.ga_number or "").strip()
+        # Group by tens: GA001-GA009 → "GA00x", GA010-GA019 → "GA01x", etc.
+        if ga.startswith("GA") and len(ga) >= 4 and ga[2:].isdigit():
+            num = int(ga[2:])
+            decade = (num // 10) * 10
+            prefix = f"GA{decade:03d}-{decade+9:03d}"
+        elif ga.startswith("GA"):
+            prefix = ga[:4] + "x"
+        else:
+            prefix = "未分类"
+        groups.setdefault(prefix, []).append(book)
+
+    result_list = []
+    for prefix in sorted(groups.keys()):
+        books_in_group = groups[prefix]
+        result_list.append({
+            "group": prefix,
+            "book_count": len(books_in_group),
+            "lecture_count": sum(b.lecture_count for b in books_in_group),
+            "sentence_count": sum(b.sentence_count for b in books_in_group),
+            "books": books_in_group,
+        })
+    return result_list
 
 
 @router.get("", response_model=list[BookResponse])
@@ -36,14 +187,38 @@ async def list_books(db: AsyncSession = Depends(get_db)):
             count_result = await db.execute(stmt)
             sentence_count = count_result.scalar() or 0
 
+            # Count images for this lecture
+            img_stmt = text("SELECT COUNT(*) FROM lecture_images WHERE lecture_id = :lid")
+            img_result = await db.execute(img_stmt, {"lid": lec.id})
+            lec_image_count = img_result.scalar() or 0
+
+            # Count translated sentences for this lecture
+            tr_stmt = text("SELECT COUNT(*) FROM sentences s "
+                          "JOIN paragraphs p ON s.paragraph_id = p.id "
+                          "WHERE p.lecture_id = :lid AND s.text_zh IS NOT NULL AND s.text_zh != ''")
+            tr_result = await db.execute(tr_stmt, {"lid": lec.id})
+            translated_count = tr_result.scalar() or 0
+
             lecture_summaries.append(LectureSummary(
                 id=lec.id,
                 title_de=lec.title_de,
+                title_zh=lec.title_zh,
                 lecture_date=lec.lecture_date,
                 location=lec.location,
                 order_index=lec.order_index,
                 sentence_count=sentence_count,
+                image_count=lec_image_count,
+                translated_count=translated_count,
+                level=lec.level,
+                parent_id=lec.parent_id,
             ))
+
+        # Count images for this book (from lecture_images via lectures)
+        img_result = await db.execute(
+            text("SELECT COUNT(*) FROM lecture_images li JOIN lectures l ON li.lecture_id = l.id WHERE l.book_id = :bid"),
+            {"bid": book.id}
+        )
+        image_count = img_result.scalar() or 0
 
         response.append(BookResponse(
             id=book.id,
@@ -54,6 +229,7 @@ async def list_books(db: AsyncSession = Depends(get_db)):
             cover_url=book.cover_url,
             created_at=book.created_at,
             lectures=lecture_summaries,
+            image_count=image_count,
         ))
 
     return response
@@ -92,15 +268,26 @@ async def get_book(book_id: int, db: AsyncSession = Depends(get_db)):
         )
         translated = translated_result.scalar() or 0
 
+        # Get image count for this lecture
+        img_result = await db.execute(
+            text("SELECT COUNT(*) FROM lecture_images WHERE lecture_id = :lid"),
+            {"lid": lec.id}
+        )
+        image_count = img_result.scalar() or 0
+
         lectures_items.append(LectureListItem(
             id=lec.id,
             book_id=book.id,
             title_de=lec.title_de,
+                title_zh=lec.title_zh,
             lecture_date=lec.lecture_date,
             location=lec.location,
             order_index=lec.order_index,
             sentence_count=total,
+            image_count=image_count,
             translated_count=translated,
+            level=lec.level,
+            parent_id=lec.parent_id,
         ))
 
     return BookDetail(
@@ -112,10 +299,11 @@ async def get_book(book_id: int, db: AsyncSession = Depends(get_db)):
         cover_url=book.cover_url,
         created_at=book.created_at,
         lectures=lectures_items,
+        image_count=sum(lec.image_count for lec in lectures_items),
     )
 
 
-@router.get("/{book_id}/lectures/{lecture_id}", response_model=LectureResponse)
+@router.get("/{book_id}/lectures/{lecture_id}")
 async def get_lecture(
     book_id: int,
     lecture_id: int,
@@ -135,4 +323,30 @@ async def get_lecture(
     if not lecture:
         raise HTTPException(status_code=404, detail="Lecture not found")
 
-    return lecture
+    from app.routers.lectures import _build_paragraph_response
+    from sqlalchemy import text as sa_text
+    
+    # 查询该讲座的图片 -> sentence_id 映射（动态获取 GA 号）
+    img_result = await db.execute(
+        sa_text("SELECT li.after_sentence_id, li.filename, b.ga_number FROM lecture_images li " +
+                "JOIN lectures l ON li.lecture_id = l.id " +
+                "JOIN books b ON l.book_id = b.id " +
+                "WHERE li.lecture_id = :lid"),
+        {"lid": lecture_id}
+    )
+    image_map = {}
+    for row in img_result:
+        if row[0]:
+            ga = row[2] if row[2] else "GA279"
+            image_map[row[0]] = f"/api/images/{ga}/{row[1]}"
+    
+    return {
+        "id": lecture.id,
+        "book_id": lecture.book_id,
+        "order_index": lecture.order_index,
+        "title_de": lecture.title_de,
+        "title_zh": lecture.title_zh,
+        "lecture_date": str(lecture.lecture_date) if lecture.lecture_date else None,
+        "location": lecture.location,
+        "paragraphs": [_build_paragraph_response(p, image_map) for p in lecture.paragraphs],
+    }

@@ -1,4 +1,6 @@
 .env
+.env.tmp
+.env.*
 uploads/
 pgdata/
 __pycache__/
@@ -6,3 +8,6 @@ __pycache__/
 .pytest_cache/
 .venv/
 node_modules/
+data/
+downloads/
+images/

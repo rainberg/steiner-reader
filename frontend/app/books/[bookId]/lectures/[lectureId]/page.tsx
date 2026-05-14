@@ -1,9 +1,19 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { fetchLecture, translateLecture, getTranslationStatus, fetchLectureImages, getStoredUser, getTranslationCost, Lecture, Sentence, LectureImage, TranslationCost } from '@/lib/api';
+import {
+  fetchLecture,
+  fetchParagraphs,
+  getTranslationCost,
+  getTranslationStatus,
+  translateLecture,
+  Lecture,
+  Paragraph,
+  Sentence,
+  TranslationCost,
+} from '@/lib/api';
 
 type ReadingMode = 'de-zh' | 'de-only' | 'zh-only';
 
@@ -14,46 +24,17 @@ export default function LecturePage() {
   const lectureId = Number(params.lectureId);
 
   const [lecture, setLecture] = useState<Lecture | null>(null);
-  const [images, setImages] = useState<LectureImage[]>([]);
+  const [paragraphs, setParagraphs] = useState<Paragraph[]>([]);
   const [loading, setLoading] = useState(true);
-  const [mode, setMode] = useState<ReadingMode>('de-only');
+  const [mode, setMode] = useState<ReadingMode>('de-zh');
   const [translating, setTranslating] = useState(false);
   const [translateMsg, setTranslateMsg] = useState<string | null>(null);
-  const [lightboxImg, setLightboxImg] = useState<string | null>(null);
   const [costInfo, setCostInfo] = useState<TranslationCost | null>(null);
   const [userCredits, setUserCredits] = useState<number | null>(null);
+  const [showTranslation, setShowTranslation] = useState<Set<number>>(new Set());
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const loadLecture = async () => {
-    try {
-      const [data, imgs] = await Promise.all([
-        fetchLecture(bookId, lectureId),
-        fetchLectureImages(lectureId).catch(() => []),
-      ]);
-      setLecture(data);
-      setImages(imgs);
-      const hasAnyTranslation = data.paragraphs.some(p => p.sentences.some(s => s.text_zh));
-      if (hasAnyTranslation && mode === 'de-only') setMode('de-zh');
-
-      // Load translation cost
-      try {
-        const cost = await getTranslationCost(lectureId);
-        setCostInfo(cost);
-        if (cost.user_credits !== null) setUserCredits(cost.user_credits);
-      } catch {}
-    } catch {
-      router.push(`/books/${bookId}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadLecture();
-    return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
-  }, [bookId, lectureId]);
-
-  const startPolling = () => {
+  const startPolling = useCallback(() => {
     if (pollingRef.current) clearInterval(pollingRef.current);
     pollingRef.current = setInterval(async () => {
       try {
@@ -61,91 +42,133 @@ export default function LecturePage() {
         if (status.completed) {
           if (pollingRef.current) clearInterval(pollingRef.current);
           setTranslating(false);
-          setTranslateMsg(`✅ 翻译完成: ${status.translated} 句`);
+          setTranslateMsg(`翻译完成：${status.translated} 句`);
           await loadLecture();
-          setMode('de-zh');
         } else {
-          setTranslateMsg(`⏳ 翻译中: ${status.translated}/${status.total} 句`);
+          setTranslateMsg(`翻译中：${status.translated}/${status.total} 句`);
         }
-      } catch {}
+      } catch {
+        // Keep polling; transient network errors should not stop the job display.
+      }
     }, 3000);
-  };
+  }, [lectureId]);
+
+  const loadLecture = useCallback(async () => {
+    try {
+      const data = await fetchLecture(lectureId);
+      setLecture(data);
+
+      const [paras, cost] = await Promise.all([
+        fetchParagraphs(lectureId),
+        getTranslationCost(lectureId).catch(() => null),
+      ]);
+      setParagraphs(paras);
+
+      if (cost) {
+        setCostInfo(cost);
+        if (cost.user_credits !== null) setUserCredits(cost.user_credits);
+      }
+
+      try {
+        const status = await getTranslationStatus(lectureId);
+        if (!status.completed && status.translated > 0) {
+          setTranslating(true);
+          startPolling();
+        }
+      } catch {
+        // Status is auxiliary; the reader can still render without it.
+      }
+    } catch {
+      router.push(`/books/${bookId}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [bookId, lectureId, router, startPolling]);
+
+  useEffect(() => {
+    loadLecture();
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current);
+    };
+  }, [loadLecture]);
 
   const handleTranslate = async () => {
-    const user = getStoredUser();
-    if (!user) {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('steiner_token') : null;
+    if (!token) {
       router.push('/login');
       return;
     }
 
     setTranslating(true);
-    setTranslateMsg('⏳ 启动翻译...');
+    setTranslateMsg('正在启动翻译...');
     try {
       const res = await translateLecture(lectureId);
       if (res.status === 'already_translated') {
         setTranslating(false);
-        setTranslateMsg('✅ 已翻译');
+        setTranslateMsg('本章已经翻译完成');
         await loadLecture();
-        setMode('de-zh');
       } else {
-        setTranslateMsg(`⏳ 翻译中: 0/${res.total} 句 (消耗 ${res.cost} 点)`);
+        setTranslateMsg(`翻译中：0/${res.total} 句`);
         if (res.credits !== undefined) setUserCredits(res.credits);
         startPolling();
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setTranslating(false);
-      if (err.message.includes('点数不足') || err.message.includes('请先登录')) {
-        setTranslateMsg(`❌ ${err.message}`);
-      } else {
-        setTranslateMsg(`❌ ${err.message}`);
-      }
+      setTranslateMsg(err instanceof Error ? err.message : '翻译失败');
     }
   };
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center text-gray-400">加载中...</div>;
+  const toggleSentence = (id: number) => {
+    setShowTranslation(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full" />
+      </div>
+    );
+  }
   if (!lecture) return null;
 
-  const totalSentences = lecture.paragraphs.reduce((sum, p) => sum + p.sentences.length, 0);
-  const translatedSentences = lecture.paragraphs.reduce((sum, p) => sum + p.sentences.filter(s => s.text_zh).length, 0);
-  const allTranslated = translatedSentences === totalSentences && totalSentences > 0;
-  const user = getStoredUser();
-
-  // Build image lookup by paragraph ID
-  const imagesByParagraph: Record<number, LectureImage[]> = {};
-  for (const img of images) {
-    if (img.after_paragraph_id) {
-      if (!imagesByParagraph[img.after_paragraph_id]) imagesByParagraph[img.after_paragraph_id] = [];
-      imagesByParagraph[img.after_paragraph_id].push(img);
-    }
-  }
+  const token = typeof window !== 'undefined' ? localStorage.getItem('steiner_token') : null;
+  const totalSentences = paragraphs.reduce((sum, p) => sum + (p.sentences?.length || 0), 0);
+  const translatedSentences = paragraphs.reduce(
+    (sum, p) => sum + (p.sentences || []).filter(s => s.content_zh || s.text_zh).length,
+    0
+  );
+  const allTranslated = totalSentences > 0 && translatedSentences === totalSentences;
 
   return (
-    <main className="min-h-screen bg-gray-50">
-      {lightboxImg && (
-        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 cursor-pointer" onClick={() => setLightboxImg(null)}>
-          <img src={lightboxImg} className="max-w-full max-h-full object-contain rounded-lg" />
-        </div>
-      )}
-
-      {/* Header */}
-      <div className="sticky top-0 bg-white border-b border-gray-200 z-10">
-        <div className="max-w-4xl mx-auto px-4 py-3">
+    <main className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
+      <div className="sticky top-0 bg-white/90 backdrop-blur-sm border-b border-slate-200 z-10">
+        <div className="max-w-4xl mx-auto px-4 py-2.5">
           <div className="flex items-center justify-between flex-wrap gap-2">
-            <Link href={`/books/${bookId}`} className="text-blue-600 hover:underline text-sm">← 返回目录</Link>
-            <div className="flex items-center gap-2">
-              <div className="flex bg-gray-100 rounded-lg p-1">
-                <button onClick={() => setMode('de-zh')}
-                  disabled={!allTranslated && translatedSentences === 0}
-                  className={`px-3 py-1 rounded-md text-sm transition ${mode === 'de-zh' ? 'bg-white shadow text-gray-900' : 'text-gray-500'} ${!allTranslated && translatedSentences === 0 ? 'opacity-40 cursor-not-allowed' : ''}`}
-                >德中对照</button>
-                <button onClick={() => setMode('de-only')}
-                  className={`px-3 py-1 rounded-md text-sm transition ${mode === 'de-only' ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}
-                >仅德语</button>
-                <button onClick={() => setMode('zh-only')}
-                  disabled={translatedSentences === 0}
-                  className={`px-3 py-1 rounded-md text-sm transition ${mode === 'zh-only' ? 'bg-white shadow text-gray-900' : 'text-gray-500'} ${translatedSentences === 0 ? 'opacity-40 cursor-not-allowed' : ''}`}
-                >仅中文</button>
-              </div>
+            <Link href={`/books/${bookId}`} className="text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center gap-1">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              返回目录
+            </Link>
+            <div className="flex bg-slate-100 rounded-lg p-0.5">
+              {(['de-zh', 'de-only', 'zh-only'] as ReadingMode[]).map(nextMode => (
+                <button
+                  key={nextMode}
+                  type="button"
+                  onClick={() => setMode(nextMode)}
+                  disabled={(nextMode === 'de-zh' || nextMode === 'zh-only') && translatedSentences === 0}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
+                    mode === nextMode ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-700'
+                  } ${((nextMode === 'de-zh' || nextMode === 'zh-only') && translatedSentences === 0) ? 'opacity-40 cursor-not-allowed' : ''}`}
+                >
+                  {nextMode === 'de-zh' ? '德中' : nextMode === 'de-only' ? '德语' : '中文'}
+                </button>
+              ))}
             </div>
           </div>
         </div>
@@ -153,7 +176,7 @@ export default function LecturePage() {
 
       {translateMsg && (
         <div className="max-w-4xl mx-auto px-4 mt-3">
-          <div className={`text-sm px-3 py-2 rounded-lg ${translateMsg.startsWith('✅') ? 'bg-green-50 text-green-700' : translateMsg.startsWith('❌') ? 'bg-red-50 text-red-700' : 'bg-yellow-50 text-yellow-700'}`}>
+          <div className="text-sm px-3 py-2 rounded-lg bg-amber-50 text-amber-700">
             {translateMsg}
           </div>
         </div>
@@ -161,98 +184,144 @@ export default function LecturePage() {
 
       <div className="max-w-4xl mx-auto px-4 py-6">
         <div className="mb-6">
-          <h1 className="text-xl font-bold text-gray-900">{lecture.title_de || 'Vortrag'}</h1>
-          <div className="text-sm text-gray-500 mt-1 flex items-center gap-3 flex-wrap">
-            {lecture.location && <span>📍 {lecture.location}</span>}
-            {lecture.lecture_date && <span>📅 {lecture.lecture_date}</span>}
-            <span>📄 {lecture.paragraphs.length} 段落</span>
-            <span>💬 {translatedSentences}/{totalSentences} 已翻译</span>
-            {images.length > 0 && <span>🖼️ {images.length} 插图</span>}
+          <h1 className="text-xl font-bold text-slate-900 leading-tight">{lecture.title_de || 'Vortrag'}</h1>
+          <div className="text-sm text-slate-500 mt-1.5 flex items-center gap-3 flex-wrap">
+            {lecture.location && <span>{lecture.location}</span>}
+            {lecture.lecture_date && <span>{lecture.lecture_date}</span>}
+            <span>{paragraphs.length} 段</span>
+            <span>{translatedSentences}/{totalSentences} 已译</span>
           </div>
         </div>
 
-        {/* Translate button section */}
         {!allTranslated && !translating && (
-          <div className="mb-6 bg-gradient-to-r from-blue-50 to-green-50 rounded-xl p-6 border border-blue-100 text-center">
-            <p className="text-gray-600 mb-2">
-              {translatedSentences === 0 ? '本篇演讲尚未翻译' : `已翻译 ${translatedSentences}/${totalSentences} 句`}
+          <div className="mb-6 bg-gradient-to-r from-blue-50 to-emerald-50 rounded-xl p-5 border border-blue-100/50 text-center">
+            <p className="text-slate-600 text-sm mb-2">
+              {translatedSentences === 0 ? '本章尚未翻译' : `已翻译 ${translatedSentences}/${totalSentences} 句`}
             </p>
-            {costInfo && !costInfo.already_translated && (
-              <p className="text-sm text-gray-500 mb-3">
-                翻译消耗 <span className="font-semibold text-orange-600">{costInfo.cost} 点</span>
-                {user ? (
-                  <span> · 当前余额 <span className="font-semibold">{userCredits ?? user.credits} 点</span></span>
-                ) : (
-                  <span> · <Link href="/login" className="text-blue-600 hover:underline">登录</Link>后可翻译</span>
-                )}
-              </p>
+            {token ? (
+              <button onClick={handleTranslate} className="px-5 py-2 rounded-lg text-sm font-medium transition shadow-sm bg-blue-600 text-white hover:bg-blue-700">
+                翻译本章（{costInfo?.cost || 10} 点，余额 {userCredits ?? 0}）
+              </button>
+            ) : (
+              <Link href="/login" className="inline-block px-5 py-2 rounded-lg text-sm font-medium bg-slate-400 text-white hover:bg-slate-500 transition">
+                登录后翻译
+              </Link>
             )}
-            <button
-              onClick={handleTranslate}
-              disabled={costInfo && user && !costInfo.can_afford ? true : undefined}
-              className={`px-6 py-3 rounded-lg text-base font-medium transition shadow-sm ${
-                !user
-                  ? 'bg-gray-400 text-white hover:bg-gray-500'
-                  : costInfo && !costInfo.can_afford
-                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                  : 'bg-blue-600 text-white hover:bg-blue-700'
-              }`}
-            >
-              {!user ? '🔑 登录后翻译' : costInfo && !costInfo.can_afford ? '⚡ 点数不足' : `🌐 翻译本篇 (${costInfo?.cost || 10} 点)`}
-            </button>
           </div>
         )}
 
         {translating && (
-          <div className="mb-6 bg-yellow-50 rounded-xl p-6 border border-yellow-100 text-center animate-pulse">
-            <p className="text-yellow-700 text-lg">⏳ 翻译进行中...</p>
+          <div className="mb-6 bg-amber-50 rounded-xl p-5 border border-amber-100 text-center animate-pulse">
+            <p className="text-amber-700">翻译进行中...</p>
           </div>
         )}
 
-        {/* Content: paragraphs with inline images */}
-        <div className="space-y-6">
-          {lecture.paragraphs.map((para, pi) => (
-            <div key={para.id}>
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-                <div className="text-xs text-gray-400 mb-3">¶ {pi + 1}</div>
-                <div className="space-y-3">
-                  {para.sentences.map((sent, si) => (
-                    <SentenceView key={sent.id} sentence={sent} mode={mode} index={si + 1} />
-                  ))}
-                </div>
+        <div className="space-y-5">
+          {paragraphs.map((para, pi) => (
+            <div key={para.id} className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
+              <div className="text-xs text-slate-300 mb-2 font-mono">§{pi + 1}</div>
+              <div className="space-y-2.5">
+                {(para.sentences || []).map((sent, si) => (
+                  <SentenceView
+                    key={sent.id}
+                    sentence={sent}
+                    mode={mode}
+                    paragraphIndex={pi + 1}
+                    index={si + 1}
+                    showZh={showTranslation.has(sent.id)}
+                    onToggle={() => toggleSentence(sent.id)}
+                  />
+                ))}
               </div>
-              {imagesByParagraph[para.id]?.map((img) => (
-                <div key={img.id} className="mt-3 flex justify-center">
-                  <div
-                    className="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm cursor-pointer hover:shadow-md transition max-w-md"
-                    onClick={() => setLightboxImg(`/api/images/${img.filename}`)}
-                  >
-                    <img src={`/api/images/${img.filename}`} alt={`插图 (第${img.page_number}页)`}
-                      className="w-full h-auto object-contain" />
-                    <div className="px-3 py-1.5 text-xs text-gray-400 text-center">🖼️ 第 {img.page_number} 页</div>
-                  </div>
-                </div>
-              ))}
             </div>
           ))}
+        </div>
+
+        <div className="mt-8 text-center">
+          <Link href={`/books/${bookId}`} className="text-blue-600 hover:underline text-sm">
+            返回目录
+          </Link>
         </div>
       </div>
     </main>
   );
 }
 
-function SentenceView({ sentence, mode, index }: { sentence: Sentence; mode: ReadingMode; index: number }) {
-  const hasTranslation = !!sentence.text_zh;
-  if (mode === 'de-only') return (
-    <div className="flex"><span className="text-gray-300 text-xs mr-2 mt-1 w-5 text-right select-none">{index}</span><p className="text-gray-800 leading-relaxed">{sentence.text_de}</p></div>
-  );
-  if (mode === 'zh-only') return (
-    <div className="flex"><span className="text-gray-300 text-xs mr-2 mt-1 w-5 text-right select-none">{index}</span>
-      {hasTranslation ? <p className="text-gray-700 leading-relaxed">{sentence.text_zh}</p> : <p className="text-gray-400 italic">（未翻译）</p>}</div>
-  );
+function ImageView({ url }: { url: string }) {
+  const [open, setOpen] = useState(false);
+
   return (
-    <div className="flex"><span className="text-gray-300 text-xs mr-2 mt-1 w-5 text-right select-none">{index}</span>
-      <div className="flex-1"><p className="text-gray-800 leading-relaxed">{sentence.text_de}</p>
-        {hasTranslation && <p className="text-gray-500 text-sm mt-1 leading-relaxed">{sentence.text_zh}</p>}</div></div>
+    <>
+      <button
+        type="button"
+        className="my-3 cursor-pointer rounded-lg overflow-hidden border border-slate-200 hover:border-blue-300 transition inline-block"
+        onClick={() => setOpen(true)}
+      >
+        <img src={url} alt="" className="max-w-full h-auto max-h-64 object-contain" loading="lazy" />
+      </button>
+      {open && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={() => setOpen(false)}>
+          <img src={url} alt="" className="max-w-full max-h-full object-contain" />
+        </div>
+      )}
+    </>
+  );
+}
+
+function SentenceView({
+  sentence,
+  mode,
+  paragraphIndex,
+  index,
+  showZh,
+  onToggle,
+}: {
+  sentence: Sentence;
+  mode: ReadingMode;
+  paragraphIndex: number;
+  index: number;
+  showZh: boolean;
+  onToggle: () => void;
+}) {
+  const de = sentence.content_de || sentence.text_de || '';
+  const zh = sentence.content_zh || sentence.text_zh || '';
+  const hasTranslation = !!zh;
+  const [localShow, setLocalShow] = useState(false);
+  const isZhVisible = mode === 'de-zh' || mode === 'zh-only' || showZh || localShow;
+
+  if (mode === 'zh-only') {
+    return (
+      <div className="flex items-start gap-2">
+        <span className="text-xs text-slate-300 font-mono shrink-0 min-w-[3rem] text-right select-none">§{paragraphIndex}.{index}</span>
+        {sentence.image_url && <ImageView url={sentence.image_url} />}
+        {hasTranslation ? (
+          <p className="text-slate-700 leading-relaxed text-[15px]">{zh}</p>
+        ) : (
+          <p className="text-slate-300 italic text-sm">（未翻译）</p>
+        )}
+      </div>
+    );
+  }
+
+  if (mode === 'de-only' && !isZhVisible) {
+    return (
+      <div className="flex items-start gap-2 group cursor-pointer" onClick={() => hasTranslation && setLocalShow(true)}>
+        <span className="text-xs text-slate-300 font-mono shrink-0 min-w-[3rem] text-right select-none">§{paragraphIndex}.{index}</span>
+        {sentence.image_url && <ImageView url={sentence.image_url} />}
+        <p className="text-slate-800 leading-relaxed text-[15px] group-hover:text-blue-700 transition">{de}</p>
+        {hasTranslation && <span className="shrink-0 text-[10px] text-blue-400 opacity-0 group-hover:opacity-100 transition mt-1">译</span>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-start gap-2" onDoubleClick={onToggle}>
+      <span className="text-xs text-slate-300 font-mono shrink-0 min-w-[3rem] text-right select-none">§{paragraphIndex}.{index}</span>
+      <div className="flex-1">
+        {sentence.image_url && <ImageView url={sentence.image_url} />}
+        <p className="text-slate-800 leading-relaxed text-[15px]">{de}</p>
+        {hasTranslation && isZhVisible && <p className="text-slate-500 text-sm mt-1 leading-relaxed">{zh}</p>}
+      </div>
+    </div>
   );
 }

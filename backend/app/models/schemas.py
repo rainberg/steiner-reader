@@ -20,6 +20,12 @@ class SentenceCreate(BaseModel):
 
 class SentenceResponse(SentenceBase):
     id: int
+    content_de: str = ""
+    content_zh: Optional[str] = None
+    paragraph_id: int = 0
+    sentence_index: int = 0
+    is_heading: bool = False
+    image_url: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -33,6 +39,10 @@ class ParagraphBase(BaseModel):
 
 class ParagraphResponse(ParagraphBase):
     id: int
+    content_de: str = ""
+    content_zh: Optional[str] = None
+    lecture_id: int = 0
+    paragraph_index: int = 0
     sentences: list[SentenceResponse] = []
 
     class Config:
@@ -43,7 +53,8 @@ class ParagraphResponse(ParagraphBase):
 
 class LectureBase(BaseModel):
     title_de: Optional[str] = None
-    lecture_date: Optional[date] = None
+    title_zh: Optional[str] = None
+    lecture_date: Optional[date | str] = None
     location: Optional[str] = None
     order_index: int
 
@@ -67,6 +78,9 @@ class LectureListItem(LectureBase):
     id: int
     book_id: int
     sentence_count: int = 0
+    level: Optional[str] = "lecture"
+    parent_id: Optional[int] = None
+    image_count: int = 0
     translated_count: int = 0
 
     class Config:
@@ -77,10 +91,16 @@ class LectureSummary(BaseModel):
     """Lecture list item (without paragraphs for performance)."""
     id: int
     title_de: Optional[str]
-    lecture_date: Optional[date]
+    title_zh: Optional[str] = None
+    lecture_date: Optional[date | str] = None
     location: Optional[str]
     order_index: int
     sentence_count: int = 0
+    paragraph_count: int = 0
+    image_count: int = 0
+    translated_count: int = 0
+    level: Optional[str] = "lecture"
+    parent_id: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -98,12 +118,31 @@ class BookBase(BaseModel):
 class BookCreate(BookBase):
     pass
 
-
 class BookResponse(BookBase):
     id: int
     cover_url: Optional[str]
     created_at: datetime
     lectures: list[LectureSummary] = []
+    image_count: int = 0
+    translated_count: int = 0
+
+    class Config:
+        from_attributes = True
+
+
+class BookSummary(BaseModel):
+    """Very small book row for the homepage."""
+    id: int
+    ga_number: Optional[str] = None
+    title_de: str
+    title_zh: Optional[str] = None
+    pdf_filename: str
+    cover_url: Optional[str] = None
+    created_at: datetime
+    lecture_count: int = 0
+    sentence_count: int = 0
+    image_count: int = 0
+    translated_count: int = 0
 
     class Config:
         from_attributes = True
@@ -114,13 +153,6 @@ class BookDetail(BookResponse):
     lectures: list[LectureListItem] = []
 
 
-# --- Upload ---
-
-class UploadResponse(BaseModel):
-    book_id: int
-    message: str
-    ga_number: Optional[str] = None
-    stats: dict = {}
 
 
 # --- Translation ---

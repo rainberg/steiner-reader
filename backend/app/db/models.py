@@ -29,16 +29,21 @@ class Lecture(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     book_id = Column(Integer, ForeignKey("books.id", ondelete="CASCADE"), nullable=False)
     title_de = Column(Text)
+    title_zh = Column(String(200))
     lecture_date = Column(Date)
     location = Column(String(200))
     order_index = Column(Integer, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+    parent_id = Column(Integer, ForeignKey("lectures.id", ondelete="CASCADE"), nullable=True)
+    level = Column(String(10), default="lecture")
 
     book = relationship("Book", back_populates="lectures", foreign_keys=[book_id])
     paragraphs = relationship("Paragraph", back_populates="lecture", cascade="all, delete-orphan",
                               foreign_keys="Paragraph.lecture_id")
     images = relationship("LectureImage", back_populates="lecture", cascade="all, delete-orphan",
                           foreign_keys="LectureImage.lecture_id")
+    children = relationship("Lecture", back_populates="parent", foreign_keys=[parent_id])
+    parent = relationship("Lecture", back_populates="children", remote_side="Lecture.id", foreign_keys=[parent_id])
 
 
 class Paragraph(Base):
@@ -79,6 +84,7 @@ class LectureImage(Base):
     caption = Column(Text)
     order_index = Column(Integer, default=0)
     after_paragraph_id = Column(Integer, ForeignKey("paragraphs.id"), nullable=True)
+    after_sentence_id = Column(Integer, ForeignKey("sentences.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     lecture = relationship("Lecture", back_populates="images", foreign_keys=[lecture_id])
@@ -106,4 +112,5 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
     credits = Column(Integer, default=100)
+    is_admin = Column(Integer, default=0)  # 0=normal, 1=admin
     created_at = Column(DateTime, default=datetime.utcnow)

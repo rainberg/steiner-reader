@@ -20,15 +20,7 @@ _nlp_loaded = False
 
 
 def get_nlp():
-    global _nlp, _nlp_loaded
-    if not _nlp_loaded:
-        _nlp_loaded = True
-        try:
-            import spacy
-            _nlp = spacy.load("de_core_news_sm")
-        except (ImportError, OSError):
-            _nlp = None
-    return _nlp
+    return None  # spaCy removed to save memory
 
 
 # ─── Data Models ────────────────────────────────────────────
@@ -93,9 +85,18 @@ def split_into_sentences(text: str) -> list[str]:
     if nlp is not None:
         doc = nlp(text)
         return [sent.text.strip() for sent in doc.sents if sent.text.strip()]
-    # Regex fallback
-    sentences = re.split(r'(?<=[.!?])\s+(?=[A-ZÄÖÜ])', text)
-    return [s.strip() for s in sentences if s.strip() and len(s.strip()) > 5]
+    # Regex fallback - improved for German
+    text = text.strip()
+    if len(text) < 5:
+        return []
+    # Split on sentence-ending punctuation followed by space+uppercase
+    sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z])', text)
+    result = []
+    for s in sentences:
+        s = s.strip()
+        if s and len(s) > 5:
+            result.append(s)
+    return result if result else [text]
 
 
 def split_into_paragraphs(text: str) -> list[str]:

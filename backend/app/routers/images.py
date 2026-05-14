@@ -1,51 +1,94 @@
-"""Lecture images router."""
-
+"""Images router - Fixed"""
 import os
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
-from sqlalchemy import select
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.db.database import get_db
-from app.db.models import LectureImage
 
 router = APIRouter(prefix="/api", tags=["images"])
+IMAGES_DIR = "/opt/steiner-reader/images"
 
-IMAGES_DIR = "/opt/steiner-reader/uploads/images"
+
+def _resolve_image_path(ga_dir: str, filename: str) -> str:
+    """Resolve actual image file path, handling filename mismatches."""
+    # Direct path
+    direct_path = os.path.join(IMAGES_DIR, ga_dir, filename)
+    if os.path.exists(direct_path):
+        return direct_path
+    # Fallback: scan directory for matching pattern
+    dir_path = os.path.join(IMAGES_DIR, ga_dir)
+    if os.path.isdir(dir_path):
+        name_only, ext = os.path.splitext(filename)
+        for f in os.listdir(dir_path):
+            if f.startswith(name_only) or name_only in f:
+                return os.path.join(dir_path, f)
+    return direct_path  # return original, will 404
+
+
+def get_ga_dir(ga_number: str) -> str:
+    """Convert ga_number like '225' to directory name GA225"""
+    if ga_number.startswith("GA"):
+        return ga_number
+    return f"GA{ga_number}"
+
+
+@router.get("/books/{book_id}/images")
+async def get_book_images(book_id: int, lecture_id: int = Query(None), db: AsyncSession = Depends(get_db)):
+    if lecture_id:
+        query = text("""
+            SELECT bi.id, bi.filename, bi.lecture_id, bi.local_paragraph_index, b.ga_number
+            FROM book_images bi
+            JOIN books b ON bi.book_id = b.id
+            WHERE bi.book_id = :book_id AND bi.lecture_id = :lecture_id
+            ORDER BY bi.local_paragraph_index
+        """)
+        result = await db.execute(query, {"book_id": book_id, "lecture_id": lecture_id})
+    else:
+        query = text("""
+            SELECT bi.id, bi.filename, bi.lecture_id, bi.local_paragraph_index, b.ga_number
+            FROM book_images bi
+            JOIN books b ON bi.book_id = b.id
+            WHERE bi.book_id = :book_id
+            ORDER BY bi.lecture_id, bi.local_paragraph_index
+        """)
+        result = await db.execute(query, {"book_id": book_id})
+
+    images = result.fetchall()
+    return [{
+        "id": img[0],
+        "filename": img[1],
+        "url": f"/api/images/{img[4]}/{img[1]}",
+        "lecture_id": img[2],
+        "paragraph_index": img[3]
+    } for img in images]
 
 
 @router.get("/lectures/{lecture_id}/images")
-async def get_lecture_images(
-    lecture_id: int,
-    db: AsyncSession = Depends(get_db),
-):
-    """Get all images for a lecture with paragraph positions."""
-    result = await db.execute(
-        select(LectureImage)
-        .where(LectureImage.lecture_id == lecture_id)
-        .order_by(LectureImage.order_index)
-    )
-    images = result.scalars().all()
-
-    return [
-        {
-            "id": img.id,
-            "lecture_id": img.lecture_id,
-            "filename": img.filename,
-            "url": f"/api/images/{img.filename}",
-            "page_number": img.page_number,
-            "width": img.width,
-            "height": img.height,
-            "after_paragraph_id": img.after_paragraph_id,
-        }
-        for img in images
-    ]
+async def get_lecture_images_new(lecture_id: int, db: AsyncSession = Depends(get_db)):
+    query = text("""
+        SELECT bi.id, bi.filename, bi.local_paragraph_index, b.ga_number
+        FROM book_images bi
+        JOIN books b ON bi.book_id = b.id
+        WHERE bi.lecture_id = :lecture_id
+        ORDER BY bi.local_paragraph_index
+    """)
+    result = await db.execute(query, {"lecture_id": lecture_id})
+    images = result.fetchall()
+    return [{
+        "id": img[0],
+        "filename": img[1],
+        "url": f"/api/images/{img[3]}/{img[1]}",
+        "paragraph_index": img[2]
+    } for img in images]
 
 
-@router.get("/images/{filename}")
-async def serve_image(filename: str):
-    """Serve an uploaded image file."""
-    filepath = os.path.join(IMAGES_DIR, filename)
+@router.get("/images/{ga_dir}/{filename}")
+async def serve_image(ga_dir: str, filename: str):
+    filepath = _resolve_image_path(ga_dir, filename)
     if not os.path.exists(filepath):
-        raise HTTPException(status_code=404, detail="Image not found")
-    return FileResponse(filepath, media_type="image/png")
+        raise HTTPException(status_code=404, detail=f"Image not found: {filepath}")
+    media_type = "image/png"
+    if filename.endswith(".jpg") or filename.endswith(".jpeg"):
+        media_type = "image/jpeg"
+    return FileResponse(filepath, media_type=media_type)

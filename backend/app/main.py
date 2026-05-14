@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import books, upload, translate, images, auth
+from app.routers import books, translate, images, auth, admin, lectures, paragraphs
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -23,10 +23,12 @@ app.add_middleware(
 
 # Include routers
 app.include_router(books.router)
-app.include_router(upload.router)
 app.include_router(translate.router)
 app.include_router(images.router)
 app.include_router(auth.router)
+app.include_router(admin.router)
+app.include_router(lectures.router)
+app.include_router(paragraphs.router)
 
 
 @app.get("/")

@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
@@ -19,14 +19,21 @@ router = APIRouter(prefix="/api", tags=["translation"])
 COST_PER_LECTURE = 10  # Credits per lecture translation
 
 
+# Track running tasks to prevent duplication
+_running_tasks: set[int] = set()
+
+
 @router.post("/lectures/{lecture_id}/translate")
 async def translate_lecture(
     lecture_id: int,
-    background_tasks: BackgroundTasks,
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Start translating a lecture (costs credits, runs in background)."""
+    # Prevent duplicate runs
+    if lecture_id in _running_tasks:
+        raise HTTPException(status_code=409, detail="该章节正在翻译中，请等待完成")
+
     # Get current counts
     total_result = await db.execute(
         select(func.count(Sentence.id))
@@ -66,8 +73,8 @@ async def translate_lecture(
     user.credits -= COST_PER_LECTURE
     await db.commit()
 
-    # Start background translation
-    background_tasks.add_task(_do_translate_lecture, lecture_id)
+    # Start background translation using asyncio.create_task
+    asyncio.create_task(_do_translate_lecture(lecture_id))
 
     return {
         "lecture_id": lecture_id,
@@ -146,42 +153,59 @@ async def lecture_translation_status(
 
 
 async def _do_translate_lecture(lecture_id: int):
-    """Background task: translate all un-translated sentences in a lecture."""
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(
-            select(Lecture)
-            .where(Lecture.id == lecture_id)
-            .options(
-                selectinload(Lecture.paragraphs)
-                .selectinload(Paragraph.sentences)
+    """Background task: translate all un-translated sentences in a lecture.
+    Commits in batches (every 20 sentences) to prevent data loss on crash.
+    """
+    _running_tasks.add(lecture_id)
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(Lecture)
+                .where(Lecture.id == lecture_id)
+                .options(
+                    selectinload(Lecture.paragraphs)
+                    .selectinload(Paragraph.sentences)
+                )
             )
-        )
-        lecture = result.scalar_one_or_none()
-        if not lecture:
-            logger.error(f"Lecture {lecture_id} not found")
-            return
+            lecture = result.scalar_one_or_none()
+            if not lecture:
+                logger.error(f"Lecture {lecture_id} not found")
+                return
 
-        untranslated = []
-        sentence_map = {}
+            untranslated = []
+            sentence_map = {}
 
-        for para in lecture.paragraphs:
-            for sent in para.sentences:
-                if not sent.text_zh:
-                    idx = len(untranslated)
-                    untranslated.append(sent.text_de)
-                    sentence_map[idx] = sent
+            for para in lecture.paragraphs:
+                for sent in para.sentences:
+                    if not sent.text_zh:
+                        idx = len(untranslated)
+                        untranslated.append(sent.text_de)
+                        sentence_map[idx] = sent
 
-        if not untranslated:
-            return
+            if not untranslated:
+                return
 
-        logger.info(f"Lecture {lecture_id}: translating {len(untranslated)} sentences...")
-        translated_texts = await translate_lecture_sentences(untranslated)
+            logger.info(f"Lecture {lecture_id}: translating {len(untranslated)} sentences...")
+            total = len(untranslated)
 
-        count = 0
-        for idx, zh_text in enumerate(translated_texts):
-            if idx in sentence_map:
-                sentence_map[idx].text_zh = zh_text
-                count += 1
+            # Translate in batches: translate 20 sentences, then commit
+            BATCH_SIZE = 20
+            for batch_start in range(0, total, BATCH_SIZE):
+                batch_sentences = untranslated[batch_start:batch_start + BATCH_SIZE]
+                translated_batch = await translate_lecture_sentences(batch_sentences)
 
-        await db.commit()
-        logger.info(f"Lecture {lecture_id}: done, {count} sentences translated")
+                for local_idx, zh_text in enumerate(translated_batch):
+                    global_idx = batch_start + local_idx
+                    if global_idx in sentence_map:
+                        sentence_map[global_idx].text_zh = zh_text
+
+                await db.commit()
+                logger.info(f"Lecture {lecture_id}: committed batch {batch_start}-{batch_start+len(batch_sentences)}")
+
+            logger.info(f"Lecture {lecture_id}: done, {total} sentences translated")
+    except Exception as e:
+        logger.error(f"Lecture {lecture_id}: translation failed: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+    finally:
+        _running_tasks.discard(lecture_id)

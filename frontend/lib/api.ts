@@ -1,50 +1,63 @@
-// API client for Steiner Reader backend
+// API client for Steiner Reader backend.
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || process.env.NEXT_PUBLIC_API_URL || '';
+
+const REQUEST_TIMEOUT_MS = 12000;
+
+async function timedFetch(url: string, options: RequestInit = {}, timeoutMs: number = REQUEST_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('Request timeout');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 
 export interface Sentence {
   id: number;
-  text_de: string;
-  text_zh: string | null;
-  order_index: number;
+  text_de?: string;
+  text_zh?: string | null;
+  order_index?: number;
+  paragraph_id?: number;
+  sentence_index?: number;
+  content_de?: string;
+  content_zh?: string | null;
+  is_heading?: boolean;
+  image_url?: string | null;
 }
 
 export interface Paragraph {
   id: number;
-  order_index: number;
+  order_index?: number;
+  lecture_id?: number;
+  paragraph_index?: number;
+  content_de?: string;
+  content_zh?: string | null;
   sentences: Sentence[];
 }
 
-// Full lecture (for reader page)
 export interface Lecture {
   id: number;
   book_id: number;
   title_de: string | null;
+  title_zh?: string | null;
   lecture_date: string | null;
   location: string | null;
   order_index: number;
-  paragraphs: Paragraph[];
-}
-
-// Lightweight lecture (for TOC page — no sentences)
-export interface LectureListItem {
-  id: number;
-  book_id: number;
-  title_de: string | null;
-  lecture_date: string | null;
-  location: string | null;
-  order_index: number;
+  level?: string | null;
+  parent_id?: number | null;
   sentence_count: number;
-  translated_count: number;
-}
-
-export interface LectureSummary {
-  id: number;
-  title_de: string | null;
-  lecture_date: string | null;
-  location: string | null;
-  order_index: number;
-  sentence_count: number;
+  paragraph_count?: number;
+  translated_count?: number;
+  image_count?: number;
+  paragraphs?: Paragraph[];
 }
 
 export interface Book {
@@ -52,128 +65,52 @@ export interface Book {
   ga_number: string | null;
   title_de: string;
   title_zh: string | null;
-  pdf_filename: string;
-  cover_url: string | null;
-  created_at: string;
-  lectures: LectureSummary[];
+  subtitle_de?: string | null;
+  subtitle_zh?: string | null;
+  pdf_filename?: string;
+  cover_url?: string | null;
+  cover_image_url?: string | null;
+  created_at?: string;
+  lectures: Lecture[];
+  image_count?: number;
+  translated_count?: number;
 }
 
-export interface BookDetail {
+export interface BookSummary {
   id: number;
   ga_number: string | null;
   title_de: string;
   title_zh: string | null;
-  pdf_filename: string;
-  cover_url: string | null;
-  created_at: string;
-  lectures: LectureListItem[];
+  pdf_filename?: string;
+  cover_url?: string | null;
+  created_at?: string;
+  lecture_count: number;
+  sentence_count: number;
+  image_count: number;
+  translated_count: number;
 }
-
-export interface UploadResponse {
-  book_id: number;
-  message: string;
-  cost?: number;
-  credits?: number;
-  ga_number: string | null;
-  stats: Record<string, number>;
-}
-
-export interface TranslateResult {
-  lecture_id: number;
-  status: string;
-  message: string;
-  cost?: number;
-  credits?: number;
-  translated: number;
-  total: number;
-}
-
-export interface TranslationStatus {
-  lecture_id: number;
-  total: number;
-  translated: number;
-  completed: boolean;
-}
-
-export async function fetchBooks(): Promise<Book[]> {
-  const res = await fetch(`${API_BASE}/api/books`, { cache: 'no-store' });
-  if (!res.ok) throw new Error('Failed to fetch books');
-  return res.json();
-}
-
-export async function fetchBook(bookId: number): Promise<BookDetail> {
-  const res = await fetch(`${API_BASE}/api/books/${bookId}`, { cache: 'no-store' });
-  if (!res.ok) throw new Error('Failed to fetch book');
-  return res.json();
-}
-
-export async function fetchLecture(bookId: number, lectureId: number): Promise<Lecture> {
-  const res = await fetch(`${API_BASE}/api/books/${bookId}/lectures/${lectureId}`, { cache: 'no-store' });
-  if (!res.ok) throw new Error('Failed to fetch lecture');
-  return res.json();
-}
-
-export async function uploadPdf(file: File): Promise<UploadResponse> {
-  const formData = new FormData();
-  formData.append('file', file);
-  const res = await fetch(`${API_BASE}/api/books/upload`, {
-    method: 'POST',
-    body: formData,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: 'Upload failed' }));
-    throw new Error(err.detail || 'Upload failed');
-  }
-  return res.json();
-}
-
-export async function translateLecture(lectureId: number): Promise<TranslateResult> {
-  const res = await fetch(`${API_BASE}/api/lectures/${lectureId}/translate`, { method: 'POST' });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: 'Translation failed' }));
-    throw new Error(err.detail || 'Translation failed');
-  }
-  return res.json();
-}
-
-export async function getTranslationStatus(lectureId: number): Promise<TranslationStatus> {
-  const res = await fetch(`${API_BASE}/api/lectures/${lectureId}/translation-status`, { cache: 'no-store' });
-  if (!res.ok) throw new Error('Failed to fetch status');
-  return res.json();
-}
-
-
-export interface LectureImage {
-  id: number;
-  lecture_id: number;
-  filename: string;
-  url: string;
-  page_number: number;
-  width: number;
-  height: number;
-  after_paragraph_id: number | null;
-}
-
-export async function fetchLectureImages(lectureId: number): Promise<LectureImage[]> {
-  const res = await fetch(`${API_BASE}/api/lectures/${lectureId}/images`, { cache: 'no-store' });
-  if (!res.ok) throw new Error('Failed to fetch images');
-  return res.json();
-}
-
-
-// --- Auth ---
 
 export interface User {
   id: number;
   username: string;
   email: string;
   credits: number;
+  is_admin?: number;
+  created_at?: string;
 }
 
 export interface AuthResponse {
   access_token: string;
   token_type: string;
   user: User;
+}
+
+export interface UploadResponse {
+  book_id?: number;
+  message: string;
+  ga_number?: string | null;
+  chapters?: number;
+  stats?: Record<string, number>;
 }
 
 export interface TranslationCost {
@@ -187,15 +124,56 @@ export interface TranslationCost {
   can_afford: boolean | null;
 }
 
+export interface TranslationStatus {
+  lecture_id: number;
+  total: number;
+  translated: number;
+  completed: boolean;
+}
+
+export interface TranslateResult {
+  lecture_id: number;
+  status: string;
+  message: string;
+  cost?: number;
+  credits?: number;
+  translated: number;
+  total: number;
+}
+
+export interface LectureImage {
+  id: number;
+  lecture_id?: number;
+  filename: string;
+  url: string;
+  page_number?: number;
+  width?: number;
+  height?: number;
+  after_paragraph_id?: number | null;
+  paragraph_index?: number | null;
+}
+
 function getToken(): string | null {
   if (typeof window === 'undefined') return null;
   return localStorage.getItem('steiner_token');
 }
 
+function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  const token = getToken();
+  return token ? { ...extra, Authorization: `Bearer ${token}` } : extra;
+}
+
+async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  return timedFetch(`${API_BASE}${url}`, {
+    ...options,
+    headers: authHeaders((options.headers as Record<string, string>) || {}),
+  });
+}
+
 export function getStoredUser(): User | null {
   if (typeof window === 'undefined') return null;
-  const u = localStorage.getItem('steiner_user');
-  return u ? JSON.parse(u) : null;
+  const raw = localStorage.getItem('steiner_user');
+  return raw ? JSON.parse(raw) : null;
 }
 
 export function saveAuth(data: AuthResponse) {
@@ -208,17 +186,101 @@ export function clearAuth() {
   localStorage.removeItem('steiner_user');
 }
 
-async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
-  const token = getToken();
-  const headers: Record<string, string> = {
-    ...(options.headers as Record<string, string> || {}),
-  };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-  return fetch(`${API_BASE}${url}`, { ...options, headers });
+export async function fetchBooks(): Promise<Book[]> {
+  const res = await timedFetch(`${API_BASE}/api/books`, { cache: 'no-store' });
+  if (!res.ok) throw new Error('Failed to fetch books');
+  return res.json();
+}
+
+export async function fetchBookSummaries(): Promise<BookSummary[]> {
+  const res = await timedFetch(`${API_BASE}/api/books/summary`, { cache: 'no-store' });
+  if (!res.ok) throw new Error('Failed to fetch book summaries');
+  return res.json();
+}
+
+export interface BookGroup {
+  group: string;
+  book_count: number;
+  lecture_count: number;
+  sentence_count: number;
+  books: BookSummary[];
+}
+
+export async function fetchBookGroups(): Promise<BookGroup[]> {
+  const res = await timedFetch(`${API_BASE}/api/books/groups`, { cache: 'no-store' });
+  if (!res.ok) throw new Error('Failed to fetch book groups');
+  return res.json();
+}
+
+export async function fetchBookSummariesPaginated(params: {
+  page?: number;
+  page_size?: number;
+  search?: string;
+  sort_by?: string;
+  sort_dir?: string;
+}): Promise<BookSummary[]> {
+  const qs = new URLSearchParams();
+  if (params.page) qs.set('page', String(params.page));
+  if (params.page_size) qs.set('page_size', String(params.page_size));
+  if (params.search) qs.set('search', params.search);
+  if (params.sort_by) qs.set('sort_by', params.sort_by);
+  if (params.sort_dir) qs.set('sort_dir', params.sort_dir);
+  const res = await timedFetch(`${API_BASE}/api/books/summary?${qs}`, { cache: 'no-store' });
+  if (!res.ok) throw new Error('Failed to fetch books');
+  return res.json();
+}
+
+export async function fetchBookCount(search: string = ''): Promise<number> {
+  const qs = search ? `?search=${encodeURIComponent(search)}` : '';
+  const res = await timedFetch(`${API_BASE}/api/books/summary/count${qs}`, { cache: 'no-store' });
+  if (!res.ok) return 0;
+  const data = await res.json();
+  return data.count;
+}
+
+export async function fetchBook(bookId: number): Promise<Book> {
+  const res = await timedFetch(`${API_BASE}/api/books/${bookId}`, { cache: 'no-store' });
+  if (!res.ok) throw new Error('Failed to fetch book');
+  return res.json();
+}
+
+export async function fetchLecture(bookIdOrLectureId: number, maybeLectureId?: number): Promise<Lecture> {
+  const url = maybeLectureId === undefined
+    ? `${API_BASE}/api/lectures/${bookIdOrLectureId}`
+    : `${API_BASE}/api/books/${bookIdOrLectureId}/lectures/${maybeLectureId}`;
+  const res = await timedFetch(url, { cache: 'no-store' });
+  if (!res.ok) throw new Error('Failed to fetch lecture');
+  return res.json();
+}
+
+export async function fetchParagraphs(lectureId: number): Promise<Paragraph[]> {
+  const res = await timedFetch(`${API_BASE}/api/lectures/${lectureId}/paragraphs`, { cache: 'no-store' });
+  if (!res.ok) throw new Error('Failed to fetch paragraphs');
+  return res.json();
+}
+
+export async function fetchSentences(paragraphId: number): Promise<Sentence[]> {
+  const res = await timedFetch(`${API_BASE}/api/paragraphs/${paragraphId}/sentences`, { cache: 'no-store' });
+  if (!res.ok) throw new Error('Failed to fetch sentences');
+  return res.json();
+}
+
+export async function uploadPdf(file: File): Promise<UploadResponse> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await authFetch('/api/books/upload', {
+    method: 'POST',
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Upload failed' }));
+    throw new Error(err.detail || 'Upload failed');
+  }
+  return res.json();
 }
 
 export async function register(username: string, email: string, password: string): Promise<AuthResponse> {
-  const res = await fetch(`${API_BASE}/api/auth/register`, {
+  const res = await timedFetch(`${API_BASE}/api/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, email, password }),
@@ -233,7 +295,7 @@ export async function register(username: string, email: string, password: string
 }
 
 export async function login(username: string, password: string): Promise<AuthResponse> {
-  const res = await fetch(`${API_BASE}/api/auth/login`, {
+  const res = await timedFetch(`${API_BASE}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password }),
@@ -248,13 +310,99 @@ export async function login(username: string, password: string): Promise<AuthRes
 }
 
 export async function fetchMe(): Promise<User> {
-  const res = await authFetch('/api/auth/me');
+  const res = await authFetch('/api/auth/me', { cache: 'no-store' });
   if (!res.ok) throw new Error('未登录');
   return res.json();
 }
 
 export async function getTranslationCost(lectureId: number): Promise<TranslationCost> {
-  const res = await authFetch(`/api/lectures/${lectureId}/translation-cost`);
+  const res = await authFetch(`/api/lectures/${lectureId}/translation-cost`, { cache: 'no-store' });
   if (!res.ok) throw new Error('获取翻译费用失败');
+  return res.json();
+}
+
+export async function getTranslationStatus(lectureId: number): Promise<TranslationStatus> {
+  const res = await timedFetch(`${API_BASE}/api/lectures/${lectureId}/translation-status`, { cache: 'no-store' });
+  if (!res.ok) throw new Error('Failed to fetch status');
+  return res.json();
+}
+
+export async function translateLecture(lectureId: number): Promise<TranslateResult> {
+  const res = await authFetch(`/api/lectures/${lectureId}/translate`, { method: 'POST' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Translation failed' }));
+    throw new Error(err.detail || 'Translation failed');
+  }
+  return res.json();
+}
+
+export async function fetchLectureImages(lectureId: number): Promise<LectureImage[]> {
+  const res = await timedFetch(`${API_BASE}/api/lectures/${lectureId}/images`, { cache: 'no-store' });
+  if (!res.ok) throw new Error('Failed to fetch images');
+  return res.json();
+}
+
+export async function changePassword(oldPassword: string, newPassword: string): Promise<void> {
+  const res = await authFetch('/api/auth/change-password', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '修改密码失败' }));
+    throw new Error(err.detail || '修改密码失败');
+  }
+}
+
+export async function changeEmail(email: string, password: string): Promise<void> {
+  const res = await authFetch('/api/auth/change-email', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '修改邮箱失败' }));
+    throw new Error(err.detail || '修改邮箱失败');
+  }
+}
+
+// --- Admin API ---
+
+export async function adminAddCredits(userId: number, amount: number): Promise<{ success: boolean; username: string; added: number; new_credits: number }> {
+  const res = await authFetch(`/api/admin/users/${userId}/credits/add`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ amount }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '充值失败' }));
+    throw new Error(err.detail || '充值失败');
+  }
+  return res.json();
+}
+
+export async function adminUpdateUser(userId: number, data: { username?: string; email?: string }): Promise<{ success: boolean; user_id: number; username: string; email: string }> {
+  const res = await authFetch(`/api/admin/users/${userId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '更新失败' }));
+    throw new Error(err.detail || '更新失败');
+  }
+  return res.json();
+}
+
+export async function adminResetPassword(userId: number, newPassword: string): Promise<{ success: boolean; message: string }> {
+  const res = await authFetch(`/api/admin/users/${userId}/reset-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ new_password: newPassword }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '重置密码失败' }));
+    throw new Error(err.detail || '重置密码失败');
+  }
   return res.json();
 }

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { login, register } from '@/lib/api';
 
-export default function AuthPage() {
+export default function LoginPage() {
   const router = useRouter();
   const [isLogin, setIsLogin] = useState(true);
   const [username, setUsername] = useState('');
@@ -18,84 +18,113 @@ export default function AuthPage() {
     e.preventDefault();
     setError('');
     setLoading(true);
+
     try {
       if (isLogin) {
         await login(username, password);
       } else {
         await register(username, email, password);
       }
+      window.dispatchEvent(new Event('auth-changed'));
       router.push('/');
       router.refresh();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '认证失败');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <main className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-      <div className="max-w-md w-full">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Steiner Reader</h1>
-          <p className="text-gray-500 mt-1">鲁道夫·施泰纳著作阅读平台</p>
-        </div>
+    <div className="min-h-[70vh] flex items-center justify-center">
+      <div className="w-full max-w-sm px-4">
+        <div className="card p-8">
+          <h1 className="text-xl font-bold text-gray-900 mb-1">
+            {isLogin ? '登录' : '注册'}
+          </h1>
+          <p className="text-sm text-gray-500 mb-6">
+            {isLogin ? '登录以使用翻译和上传功能' : '注册即赠送 100 点翻译额度'}
+          </p>
 
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-          <div className="flex mb-6">
+          <div className="flex mb-6 bg-gray-100 rounded-lg p-1">
             <button
+              type="button"
               onClick={() => { setIsLogin(true); setError(''); }}
-              className={`flex-1 py-2 text-center text-sm font-medium rounded-l-lg transition ${isLogin ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
-            >登录</button>
+              className={`flex-1 py-1.5 rounded-md text-sm font-medium transition ${
+                isLogin ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
+              }`}
+            >
+              登录
+            </button>
             <button
+              type="button"
               onClick={() => { setIsLogin(false); setError(''); }}
-              className={`flex-1 py-2 text-center text-sm font-medium rounded-r-lg transition ${!isLogin ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
-            >注册</button>
+              className={`flex-1 py-1.5 rounded-md text-sm font-medium transition ${
+                !isLogin ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
+              }`}
+            >
+              注册
+            </button>
           </div>
 
           {error && (
-            <div className="mb-4 text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</div>
+            <div className="bg-red-50/80 border border-red-100 text-red-600 text-sm px-3 py-2 rounded-lg mb-4">
+              {error}
+            </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm text-gray-600 mb-1">用户名</label>
-              <input type="text" value={username} onChange={e => setUsername(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="请输入用户名" required />
+              <label className="block text-sm font-medium text-gray-600 mb-1">用户名</label>
+              <input
+                type="text"
+                value={username}
+                onChange={e => setUsername(e.target.value)}
+                placeholder="输入用户名"
+                required
+                className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-all"
+              />
             </div>
 
             {!isLogin && (
               <div>
-                <label className="block text-sm text-gray-600 mb-1">邮箱</label>
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="请输入邮箱" required />
+                <label className="block text-sm font-medium text-gray-600 mb-1">邮箱</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="输入邮箱"
+                  required
+                  className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-all"
+                />
               </div>
             )}
 
             <div>
-              <label className="block text-sm text-gray-600 mb-1">密码</label>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder={isLogin ? '请输入密码' : '至少6个字符'} minLength={6} required />
+              <label className="block text-sm font-medium text-gray-600 mb-1">密码</label>
+              <input
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder={isLogin ? '输入密码' : '至少 6 个字符'}
+                minLength={isLogin ? undefined : 6}
+                required
+                className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-all"
+              />
             </div>
 
-            <button type="submit" disabled={loading}
-              className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-medium hover:bg-blue-700 transition disabled:opacity-50">
+            <button type="submit" disabled={loading} className="btn-primary w-full">
               {loading ? '处理中...' : isLogin ? '登录' : '注册'}
             </button>
           </form>
-
-          {!isLogin && (
-            <p className="mt-4 text-xs text-gray-400 text-center">注册即赠送 100 点翻译额度</p>
-          )}
         </div>
 
         <div className="text-center mt-4">
-          <Link href="/" className="text-sm text-blue-600 hover:underline">← 返回首页</Link>
+          <Link href="/" className="text-sm text-indigo-500 hover:text-indigo-600">
+            返回首页
+          </Link>
         </div>
       </div>
-    </main>
+    </div>
   );
 }

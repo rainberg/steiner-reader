@@ -1,10 +1,11 @@
 """Translation service — German → Chinese via Google Translate (free)."""
 
 import asyncio
+import time
 from deep_translator import GoogleTranslator
 
 
-def translate_sentence(text_de: str) -> str:
+def translate_sentence_sync(text_de: str) -> str:
     """Translate a single German sentence to Chinese."""
     try:
         translator = GoogleTranslator(source='de', target='zh-CN')
@@ -14,49 +15,35 @@ def translate_sentence(text_de: str) -> str:
 
 
 async def translate_sentence_async(text_de: str) -> str:
-    """Async wrapper."""
+    """Async wrapper for single sentence translation."""
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, translate_sentence, text_de)
+    return await loop.run_in_executor(None, translate_sentence_sync, text_de)
 
 
-async def translate_lecture_sentences(sentences: list[str], batch_size: int = 10) -> list[str]:
+async def translate_lecture_sentences(sentences: list[str], batch_size: int = 1) -> list[str]:
     """
-    Translate sentences for one lecture in small batches.
-    Google Translate limit: ~5000 chars per request.
-    batch_size=10 sentences per request keeps us well under the limit.
+    Translate sentences for one lecture - each sentence individually.
+    Uses run_in_executor to avoid blocking the event loop.
     """
     results = []
     
-    for i in range(0, len(sentences), batch_size):
-        batch = sentences[i:i + batch_size]
-        
-        # Join with newlines for batch translation
-        joined = "\n".join(batch)
-        
-        # Truncate if too long (safety)
-        if len(joined) > 4500:
-            joined = joined[:4500]
-        
+    for i, sentence in enumerate(sentences):
         try:
-            translator = GoogleTranslator(source='de', target='zh-CN')
-            translated = translator.translate(joined)
+            # Use run_in_executor so the event loop stays responsive
+            translated = await translate_sentence_async(sentence)
+            results.append(translated)
             
-            # Split back into individual translations
-            parts = translated.split("\n")
-            
-            # Match count (Google might merge/split lines)
-            for j, sent in enumerate(batch):
-                if j < len(parts):
-                    results.append(parts[j].strip())
-                else:
-                    results.append(sent)  # Fallback to original
-            
+            # Progress logging every 20 sentences
+            if (i + 1) % 20 == 0:
+                print(f"[translator] Translated {i+1}/{len(sentences)} sentences")
+                
         except Exception as e:
-            # On failure, add originals
-            results.extend(batch)
-        
-        # Small delay to avoid rate limiting
-        if i + batch_size < len(sentences):
-            await asyncio.sleep(0.5)
+            print(f"[translator] Failed to translate sentence {i+1}: {e}")
+            results.append(sentence)  # Fallback to original
+            
+        # Rate limiting: wait between translations to avoid being blocked
+        # Google Translate free tier has limits, so we use a reasonable delay
+        if i + 1 < len(sentences):
+            await asyncio.sleep(0.3)  # 300ms between requests
     
     return results
