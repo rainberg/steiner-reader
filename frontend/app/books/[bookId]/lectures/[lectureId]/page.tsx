@@ -403,27 +403,30 @@ export default function LecturePage() {
           ))}
         </div>
 
-        {/* Bottom download button — easy to find after reading */}
-        {isPublished && hasDownloadAccess && (
+        {/* Bottom download section — always visible when published */}
+        {isPublished && (
           <div className="mt-8 text-center">
             <span className="text-xs text-amber-600 block mb-2">请及时下载已解锁内容。本网站不保证长期运行或永久提供访问。</span>
-            <button
-              onClick={handleDownload}
-              className="inline-block px-6 py-2.5 rounded-lg text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-md border border-emerald-700"
-            >
-              下载 PDF
-            </button>
-          </div>
-        )}
-        {isPublished && !hasDownloadAccess && token && (
-          <div className="mt-8 text-center">
-            <button
-              onClick={handlePurchaseDownload}
-              disabled={purchasing}
-              className="inline-block px-6 py-2.5 rounded-lg text-sm font-bold bg-blue-600 text-white hover:bg-blue-700 transition shadow-md border border-blue-700 disabled:opacity-50"
-            >
-              {purchasing ? '购买中...' : `消耗 ${downloadCost} 点获得 PDF 下载权限`}
-            </button>
+            {hasDownloadAccess ? (
+              <button
+                onClick={handleDownload}
+                className="inline-block px-6 py-2.5 rounded-lg text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-md border border-emerald-700"
+              >
+                下载 PDF
+              </button>
+            ) : token ? (
+              <button
+                onClick={handlePurchaseDownload}
+                disabled={purchasing}
+                className="inline-block px-6 py-2.5 rounded-lg text-sm font-bold bg-blue-600 text-white hover:bg-blue-700 transition shadow-md border border-blue-700 disabled:opacity-50"
+              >
+                {purchasing ? '购买中...' : `消耗 ${downloadCost} 点获得 PDF 下载权限`}
+              </button>
+            ) : (
+              <Link href="/login" className="inline-block px-6 py-2.5 rounded-lg text-sm font-bold bg-slate-500 text-white hover:bg-slate-600 transition shadow-md">
+                登录后下载
+              </Link>
+            )}
           </div>
         )}
 
