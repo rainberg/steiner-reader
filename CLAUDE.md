@@ -99,10 +99,34 @@ There are no lint or test commands configured (no pytest, no jest, no eslint).
 
 ## Infrastructure
 
-- `docker-compose.yml`: nginx, backend, frontend. No PostgreSQL service — DB runs externally. Network `steiner-network` is external.
-- `nginx.conf`: Reverse proxy, `/api/*` → backend:8000, `/*` → frontend:3000. `client_max_body_size 50m`.
+- **Production domain**: `https://steiner.3mudi.com` (Cloudflare CDN → origin `66.154.112.162`)
+- **Origin server**: `66.154.112.162`, SSH as `root`
+- **Backend**: systemd service `steiner-backend` — uvicorn on `127.0.0.1:8000`
+- **Frontend**: systemd service `steiner-frontend` — Next.js on `127.0.0.1:3000`
+- **Nginx**: reverse proxy on origin, `/api/*` → `127.0.0.1:8000`, `/*` → `127.0.0.1:3000`, SSL via Let's Encrypt
+- **PostgreSQL**: runs locally on origin as user `steiner`, DB `steiner_reader`
 - Backend `IMAGES_DIR` is hardcoded to `/opt/steiner-reader/images` in `images.py`.
-- Production IP: `66.154.112.162`, deploy via rsync + docker-compose restart (backend) / npm build + pm2 restart (frontend).
+- Logs: `journalctl -u steiner-backend/frontend`, error logs at `/var/log/steiner-reader/`
+
+### Frontend API URL Configuration
+
+`api.ts` uses `NEXT_PUBLIC_API_URL || ''` as base URL. MUST be empty in production so the browser uses relative paths (`/api/...`) through the nginx proxy. Setting it to an absolute URL (e.g., `http://66.154.112.162:8000`) will break the site due to mixed-content blocking (HTTPS page → HTTP API).
+
+- `.env` — `NEXT_PUBLIC_API_URL=` (empty, correct)
+- `.env.local` — MUST also be empty; takes precedence over `.env`
+- Dev: `next.config.ts` rewrites `/api/:path*` → `http://127.0.0.1:8000/api/:path*`
+
+### Deploy Commands
+
+```bash
+# Backend
+rsync -avz --exclude='__pycache__' --exclude='*.pyc' --exclude='.env' backend/ root@66.154.112.162:/opt/steiner-reader/backend/
+ssh root@66.154.112.162 "systemctl restart steiner-backend.service"
+
+# Frontend
+rsync -avz --exclude='node_modules' --exclude='.next' frontend/ root@66.154.112.162:/opt/steiner-reader/frontend/
+ssh root@66.154.112.162 "cd /opt/steiner-reader/frontend && npm run build && systemctl restart steiner-frontend.service"
+```
 
 ## Key Warnings
 
