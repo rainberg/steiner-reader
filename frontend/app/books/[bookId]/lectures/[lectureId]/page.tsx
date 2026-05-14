@@ -161,7 +161,8 @@ export default function LecturePage() {
         setTranslateMsg(err.detail || '下载失败');
         return;
       }
-      const blob = await res.blob();
+      const text = await res.text();
+      const blob = new Blob(['﻿' + text], { type: 'text/html;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
