@@ -11,7 +11,6 @@ import {
   translateLecture,
   getDownloadPermission,
   purchaseDownloadAccess,
-  getDownloadUrl,
   editSentence,
   fetchSentenceEdits,
   fetchContributions,
@@ -168,6 +167,32 @@ export default function LecturePage() {
     }
   };
 
+  const handleDownload = async () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('steiner_token') : null;
+    if (!token) return;
+    try {
+      const res = await fetch(`/api/lectures/${lectureId}/download`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: '下载失败' }));
+        setTranslateMsg(err.detail || '下载失败');
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = ''; // use server-provided filename
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      setTranslateMsg('下载失败，请重试');
+    }
+  };
+
   const handleEditSentence = async (sentenceId: number) => {
     if (editValue.trim() === '') {
       setEditMsg('内容不能为空');
@@ -302,14 +327,12 @@ export default function LecturePage() {
               {hasDownloadAccess ? (
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded">请及时下载已解锁内容。本网站不保证长期运行或永久提供访问。</span>
-                  <a
-                    href={getDownloadUrl(lectureId)}
+                  <button
+                    onClick={handleDownload}
                     className="px-4 py-2 rounded-lg text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-md border border-emerald-700"
-                    target="_blank"
-                    rel="noopener noreferrer"
                   >
                     📥 下载 PDF
-                  </a>
+                  </button>
                 </div>
               ) : token ? (
                 <button
@@ -384,14 +407,12 @@ export default function LecturePage() {
         {isPublished && hasDownloadAccess && (
           <div className="mt-8 text-center">
             <span className="text-xs text-amber-600 block mb-2">请及时下载已解锁内容。本网站不保证长期运行或永久提供访问。</span>
-            <a
-              href={getDownloadUrl(lectureId)}
+            <button
+              onClick={handleDownload}
               className="inline-block px-6 py-2.5 rounded-lg text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-md border border-emerald-700"
-              target="_blank"
-              rel="noopener noreferrer"
             >
               📥 下载 PDF
-            </a>
+            </button>
           </div>
         )}
         {isPublished && !hasDownloadAccess && token && (
