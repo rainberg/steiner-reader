@@ -100,7 +100,8 @@ export default function LecturePage() {
         setDownloadPerm(perm);
       }
 
-      // Store edit costs from lecture response (if available)
+      // Store costs from lecture response
+      if (typeof data.download_lecture_cost === 'number') setDownloadCost(data.download_lecture_cost);
       if (typeof data.edit_translation_cost === 'number') setEditTransCost(data.edit_translation_cost);
       if (typeof data.edit_source_cost === 'number') setEditSourceCost(data.edit_source_cost);
 

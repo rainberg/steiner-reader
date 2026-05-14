@@ -63,6 +63,7 @@ export interface Lecture {
   can_download_pdf?: boolean;
   can_edit?: boolean;
   download_notice?: string;
+  download_lecture_cost?: number;
   edit_translation_cost?: number;
   edit_source_cost?: number;
 }

@@ -358,6 +358,7 @@ async def get_lecture(
     # Edit costs
     edit_translation_cost = await get_credit_price(db, "edit_translation_sentence")
     edit_source_cost = await get_credit_price(db, "edit_source_sentence")
+    download_lecture_cost = await get_credit_price(db, "download_lecture_pdf")
 
     return {
         "id": lecture.id,
@@ -372,6 +373,7 @@ async def get_lecture(
         "can_download_pdf": can_download_pdf,
         "can_edit": is_published and user is not None,
         "download_notice": "请及时下载已解锁内容。本网站不保证长期运行或永久提供访问。",
+        "download_lecture_cost": download_lecture_cost,
         "edit_translation_cost": edit_translation_cost,
         "edit_source_cost": edit_source_cost,
         "paragraphs": [_build_paragraph_response(p, image_map, is_published) for p in lecture.paragraphs],
