@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { clearAuth, fetchMe, getStoredUser, User, changePassword, changeEmail } from '@/lib/api';
+import { clearAuth, fetchMe, getStoredUser, User, changePassword, changeEmail, fetchMyTransactions, CreditTransaction } from '@/lib/api';
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -23,6 +23,9 @@ export default function ProfilePage() {
   const [emailError, setEmailError] = useState('');
   const [emailSuccess, setEmailSuccess] = useState('');
 
+  const [transactions, setTransactions] = useState<CreditTransaction[]>([]);
+  const [txLoading, setTxLoading] = useState(false);
+
   useEffect(() => {
     const stored = getStoredUser();
     if (!stored) {
@@ -35,12 +38,29 @@ export default function ProfilePage() {
         setUser(u);
         localStorage.setItem('steiner_user', JSON.stringify(u));
         setLoading(false);
+        // Fetch transaction history
+        setTxLoading(true);
+        fetchMyTransactions(u.id).then(data => {
+          setTransactions(data.transactions || []);
+        }).catch(() => {}).finally(() => setTxLoading(false));
       })
       .catch(() => {
         clearAuth();
         router.push('/login');
       });
   }, [router]);
+
+  const TX_LABELS: Record<string, string> = {
+    translate_lecture: '翻译章节',
+    translate_book: '翻译全书',
+    edit_translation: '编辑译文',
+    edit_source: '编辑原文',
+    download_lecture: '下载PDF',
+    download_book: '下载全书PDF',
+    admin_add: '管理员充值',
+    admin_set: '管理员设置',
+    register_bonus: '注册奖励',
+  };
 
   const handleLogout = () => {
     clearAuth();
@@ -236,6 +256,36 @@ export default function ProfilePage() {
             {emailLoading ? '修改中...' : '修改邮箱'}
           </button>
         </form>
+      </div>
+
+      {/* 积分记录 */}
+      <div className="card p-8 mb-6">
+        <h2 className="text-lg font-semibold text-gray-800 mb-4">积分记录</h2>
+        {txLoading ? (
+          <p className="text-sm text-gray-400">加载中...</p>
+        ) : transactions.length === 0 ? (
+          <p className="text-sm text-gray-400">暂无积分记录</p>
+        ) : (
+          <div className="space-y-2 max-h-80 overflow-y-auto">
+            {transactions.slice(0, 50).map(tx => (
+              <div key={tx.id} className="flex items-center justify-between py-2 border-b border-gray-100 text-sm">
+                <div className="flex-1">
+                  <span className="text-gray-700">{TX_LABELS[tx.transaction_type] || tx.transaction_type}</span>
+                  {tx.description && <span className="text-gray-400 text-xs ml-2">{tx.description}</span>}
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className={tx.amount > 0 ? 'text-emerald-500 text-xs' : 'text-red-400 text-xs'}>
+                    {tx.amount > 0 ? `+${tx.amount}` : tx.amount}
+                  </span>
+                  <span className="text-gray-400 text-xs w-16 text-right">{tx.balance_after}</span>
+                  <span className="text-gray-300 text-xs w-24 text-right">
+                    {new Date(tx.created_at).toLocaleDateString('zh-CN')}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* 退出登录 */}

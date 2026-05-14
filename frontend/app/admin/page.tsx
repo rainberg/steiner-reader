@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { adminAddCredits, adminUpdateUser, adminResetPassword } from "@/lib/api";
+import { adminAddCredits, adminUpdateUser, adminResetPassword, fetchCreditSettings, updateCreditSetting, CreditSetting } from "@/lib/api";
 
 interface User {
   id: number;
@@ -28,6 +28,11 @@ export default function AdminPage() {
   // Edit user modal state
   const [editModal, setEditModal] = useState<{ user: User } | null>(null);
   const [editUsername, setEditUsername] = useState("");
+
+  // Tab state
+  const [activeTab, setActiveTab] = useState<"users" | "settings">("users");
+  const [creditSettings, setCreditSettings] = useState<CreditSetting[]>([]);
+  const [settingsLoading, setSettingsLoading] = useState(false);
   const [editEmail, setEditEmail] = useState("");
 
   // Reset password modal state
@@ -222,9 +227,31 @@ export default function AdminPage() {
 
   return (
     <div className="max-w-6xl mx-auto p-6">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">用户管理</h1>
-        <p className="text-gray-500 mt-1">管理用户账户和点数</p>
+      <div className="mb-6">
+        <div className="flex gap-2 border-b border-gray-200 pb-0">
+          <button
+            onClick={() => setActiveTab("users")}
+            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition ${
+              activeTab === "users" ? "bg-white text-blue-600 border border-b-white border-gray-200 -mb-px" : "text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            用户管理
+          </button>
+          <button
+            onClick={() => { setActiveTab("settings"); loadCreditSettings(); }}
+            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition ${
+              activeTab === "settings" ? "bg-white text-blue-600 border border-b-white border-gray-200 -mb-px" : "text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            积分设置
+          </button>
+        </div>
+      </div>
+
+      {activeTab === "users" ? (
+      <>
+      <div className="mb-4">
+        <p className="text-gray-500 text-sm">管理用户账户和点数</p>
       </div>
 
       {error && (
@@ -487,6 +514,120 @@ export default function AdminPage() {
           </div>
         </div>
       )}
+      </>
+      ) : (
+      <CreditSettingsTab
+        settings={creditSettings}
+        loading={settingsLoading}
+        onUpdate={async (key: string, value: number) => {
+          await updateCreditSetting(key, value);
+          await loadCreditSettings();
+        }}
+      />
+      )}
+    </div>
+  );
+
+  function loadCreditSettings() {
+    setSettingsLoading(true);
+    fetchCreditSettings()
+      .then(setCreditSettings)
+      .catch((e) => setError(e.message))
+      .finally(() => setSettingsLoading(false));
+  }
+}
+
+function CreditSettingsTab({
+  settings,
+  loading,
+  onUpdate,
+}: {
+  settings: CreditSetting[];
+  loading: boolean;
+  onUpdate: (key: string, value: number) => Promise<void>;
+}) {
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [msg, setMsg] = useState("");
+
+  const LABELS: Record<string, string> = {
+    translate_lecture: "翻译单章 (每次)",
+    translate_book: "翻译全书 (每次)",
+    edit_translation_sentence: "编辑译文 (每次)",
+    edit_source_sentence: "编辑原文 (每次)",
+    download_lecture_pdf: "单章PDF下载权限",
+    download_book_pdf: "全书PDF下载权限",
+  };
+
+  const handleSave = async (key: string) => {
+    const val = parseInt(editValue, 10);
+    if (isNaN(val) || val < 0) { setMsg("请输入有效数字"); return; }
+    try {
+      await onUpdate(key, val);
+      setEditingKey(null);
+      setMsg("保存成功");
+    } catch {
+      setMsg("保存失败");
+    }
+  };
+
+  if (loading) {
+    return <div className="text-center py-8 text-gray-400">加载中...</div>;
+  }
+
+  return (
+    <div>
+      <p className="text-gray-500 text-sm mb-4">配置各项点数消耗价格</p>
+      {msg && (
+        <div className="mb-4 p-2 bg-green-50 text-green-700 rounded text-sm">
+          {msg}
+          <button onClick={() => setMsg("")} className="float-right">&times;</button>
+        </div>
+      )}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <table className="w-full">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">配置项</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">说明</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">当前值 (点数)</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">操作</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {settings.map((s) => (
+              <tr key={s.key} className="hover:bg-gray-50">
+                <td className="px-6 py-4 text-sm font-medium text-gray-900">{s.key}</td>
+                <td className="px-6 py-4 text-sm text-gray-500">{LABELS[s.key] || s.description}</td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <span className="text-sm font-mono text-gray-700">{s.value}</span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  {editingKey === s.key ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        value={editValue}
+                        onChange={e => setEditValue(e.target.value)}
+                        className="w-20 px-2 py-1 border rounded text-sm"
+                      />
+                      <button onClick={() => handleSave(s.key)} className="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700">保存</button>
+                      <button onClick={() => setEditingKey(null)} className="px-2 py-1 text-gray-500 text-xs">取消</button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => { setEditingKey(s.key); setEditValue(String(s.value)); }}
+                      className="text-blue-600 hover:text-blue-800 text-sm"
+                    >
+                      修改
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

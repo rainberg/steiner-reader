@@ -8,7 +8,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
-from app.db.models import User
+from app.db.models import User, CreditSetting, CreditTransaction
 from app.routers.auth import require_admin, pwd_context
 from .admin_translation_utils import admin_retranslate_lecture
 
@@ -96,18 +96,28 @@ async def update_user_credits(
     """Set a user's credit balance."""
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
-    
+
     if not user:
         raise HTTPException(404, "用户不存在")
-    
+
     if req.credits < 0:
         raise HTTPException(400, "点数不能为负数")
-    
+
     old_credits = user.credits
+    diff = req.credits - old_credits
     user.credits = req.credits
+
+    # Log transaction
+    db.add(CreditTransaction(
+        user_id=user.id,
+        amount=diff,
+        balance_after=req.credits,
+        transaction_type="admin_set",
+        description=f"管理员 {admin.username} 设置积分为 {req.credits} (变动 {diff:+d})",
+    ))
     await db.commit()
     await db.refresh(user)
-    
+
     return {
         "success": True,
         "user_id": user.id,
@@ -127,14 +137,21 @@ async def add_user_credits(
     """Add credits to a user's balance."""
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
-    
+
     if not user:
         raise HTTPException(404, "用户不存在")
-    
+
     user.credits += req.credits
+    db.add(CreditTransaction(
+        user_id=user.id,
+        amount=req.credits,
+        balance_after=user.credits,
+        transaction_type="admin_add",
+        description=f"管理员 {admin.username} 充值 {req.credits} 点",
+    ))
     await db.commit()
     await db.refresh(user)
-    
+
     return {
         "success": True,
         "user_id": user.id,
@@ -166,6 +183,13 @@ async def add_user_credits_v2(
         raise HTTPException(404, "用户不存在")
 
     user.credits += req.amount
+    db.add(CreditTransaction(
+        user_id=user.id,
+        amount=req.amount,
+        balance_after=user.credits,
+        transaction_type="admin_add",
+        description=f"管理员 {admin.username} 充值 {req.amount} 点",
+    ))
     await db.commit()
     await db.refresh(user)
 
@@ -401,3 +425,87 @@ async def delete_user(
         username=username,
         message=f"用户 {username} 已删除",
     )
+
+
+# --- Credit Settings Endpoints ---
+
+class CreditSettingResponse(BaseModel):
+    id: int
+    key: str
+    value: int
+    description: Optional[str] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class CreditSettingUpdateRequest(BaseModel):
+    value: int
+
+
+@router.get("/credit-settings", response_model=list[CreditSettingResponse])
+async def get_credit_settings(
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get all credit pricing settings."""
+    result = await db.execute(select(CreditSetting).order_by(CreditSetting.key))
+    rows = result.scalars().all()
+    return [CreditSettingResponse.model_validate(r) for r in rows]
+
+
+@router.put("/credit-settings/{key}", response_model=CreditSettingResponse)
+async def update_credit_setting(
+    key: str,
+    req: CreditSettingUpdateRequest,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update a credit pricing setting value."""
+    result = await db.execute(
+        select(CreditSetting).where(CreditSetting.key == key)
+    )
+    setting = result.scalar_one_or_none()
+    if not setting:
+        raise HTTPException(404, f"设置键 '{key}' 不存在")
+
+    setting.value = req.value
+    await db.commit()
+    await db.refresh(setting)
+    return CreditSettingResponse.model_validate(setting)
+
+
+# --- Credit Transaction History ---
+
+class CreditTransactionResponse(BaseModel):
+    id: int
+    user_id: int
+    amount: int
+    balance_after: int
+    transaction_type: str
+    reference_type: Optional[str] = None
+    reference_id: Optional[int] = None
+    description: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/credit-transactions", response_model=list[CreditTransactionResponse])
+async def get_credit_transactions(
+    user_id: Optional[int] = None,
+    limit: int = 100,
+    offset: int = 0,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get credit transaction history (admin view)."""
+    query = select(CreditTransaction).order_by(CreditTransaction.created_at.desc())
+    if user_id is not None:
+        query = query.where(CreditTransaction.user_id == user_id)
+    query = query.offset(offset).limit(min(limit, 500))
+    result = await db.execute(query)
+    rows = result.scalars().all()
+    return [CreditTransactionResponse.model_validate(r) for r in rows]

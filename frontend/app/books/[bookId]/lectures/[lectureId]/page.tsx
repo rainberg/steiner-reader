@@ -9,10 +9,19 @@ import {
   getTranslationCost,
   getTranslationStatus,
   translateLecture,
+  getDownloadPermission,
+  purchaseDownloadAccess,
+  getDownloadUrl,
+  editSentence,
+  fetchSentenceEdits,
+  fetchContributions,
   Lecture,
   Paragraph,
   Sentence,
   TranslationCost,
+  DownloadPermission,
+  ContributionDisplay,
+  EditLogEntry,
 } from '@/lib/api';
 
 type ReadingMode = 'de-zh' | 'de-only' | 'zh-only';
@@ -33,6 +42,19 @@ export default function LecturePage() {
   const [userCredits, setUserCredits] = useState<number | null>(null);
   const [showTranslation, setShowTranslation] = useState<Set<number>>(new Set());
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // New state: publication, download, contributions, editing
+  const [isPublished, setIsPublished] = useState(false);
+  const [downloadPerm, setDownloadPerm] = useState<DownloadPermission | null>(null);
+  const [contributions, setContributions] = useState<ContributionDisplay[]>([]);
+  const [downloadCost, setDownloadCost] = useState<number>(5);
+  const [editTransCost, setEditTransCost] = useState<number>(2);
+  const [editSourceCost, setEditSourceCost] = useState<number>(3);
+  const [editingSentenceId, setEditingSentenceId] = useState<number | null>(null);
+  const [editField, setEditField] = useState<'text_de' | 'text_zh'>('text_zh');
+  const [editValue, setEditValue] = useState('');
+  const [editMsg, setEditMsg] = useState<string | null>(null);
+  const [purchasing, setPurchasing] = useState(false);
 
   const startPolling = useCallback(() => {
     if (pollingRef.current) clearInterval(pollingRef.current);
@@ -58,16 +80,29 @@ export default function LecturePage() {
       const data = await fetchLecture(lectureId);
       setLecture(data);
 
-      const [paras, cost] = await Promise.all([
+      // Check publication from lecture response
+      setIsPublished(data.is_published === true);
+
+      const [paras, cost, perm, contribs] = await Promise.all([
         fetchParagraphs(lectureId),
         getTranslationCost(lectureId).catch(() => null),
+        getDownloadPermission(lectureId).catch(() => null),
+        fetchContributions(lectureId).catch(() => []),
       ]);
       setParagraphs(paras);
+      setContributions(contribs);
 
       if (cost) {
         setCostInfo(cost);
         if (cost.user_credits !== null) setUserCredits(cost.user_credits);
       }
+      if (perm) {
+        setDownloadPerm(perm);
+      }
+
+      // Store edit costs from lecture response (if available)
+      if (typeof data.edit_translation_cost === 'number') setEditTransCost(data.edit_translation_cost);
+      if (typeof data.edit_source_cost === 'number') setEditSourceCost(data.edit_source_cost);
 
       try {
         const status = await getTranslationStatus(lectureId);
@@ -108,13 +143,43 @@ export default function LecturePage() {
         setTranslateMsg('本章已经翻译完成');
         await loadLecture();
       } else {
-        setTranslateMsg(`翻译中：0/${res.total} 句`);
+        setTranslateMsg(`翻译中：${res.translated}/${res.total} 句`);
         if (res.credits !== undefined) setUserCredits(res.credits);
         startPolling();
       }
     } catch (err: unknown) {
       setTranslating(false);
       setTranslateMsg(err instanceof Error ? err.message : '翻译失败');
+    }
+  };
+
+  const handlePurchaseDownload = async () => {
+    setPurchasing(true);
+    try {
+      const res = await purchaseDownloadAccess(lectureId);
+      setDownloadPerm({ has_permission: true, access_types: ['download_purchase'] });
+      setUserCredits(res.credits_remaining);
+      setTranslateMsg('下载权限已开通，请及时下载文件。下载链接仅在开通后一定时间内有效。');
+    } catch (err: unknown) {
+      setTranslateMsg(err instanceof Error ? err.message : '购买失败');
+    } finally {
+      setPurchasing(false);
+    }
+  };
+
+  const handleEditSentence = async (sentenceId: number) => {
+    if (editValue.trim() === '') {
+      setEditMsg('内容不能为空');
+      return;
+    }
+    try {
+      const res = await editSentence(sentenceId, { field: editField, new_value: editValue });
+      setUserCredits(res.credits_remaining);
+      setEditingSentenceId(null);
+      setEditMsg(null);
+      await loadLecture(); // Refresh to show updated text
+    } catch (err: unknown) {
+      setEditMsg(err instanceof Error ? err.message : '编辑失败');
     }
   };
 
@@ -143,6 +208,8 @@ export default function LecturePage() {
     0
   );
   const allTranslated = totalSentences > 0 && translatedSentences === totalSentences;
+  const hasDownloadAccess = downloadPerm?.has_permission === true || false;
+  const canEdit = isPublished && !!token;
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
@@ -161,10 +228,10 @@ export default function LecturePage() {
                   key={nextMode}
                   type="button"
                   onClick={() => setMode(nextMode)}
-                  disabled={(nextMode === 'de-zh' || nextMode === 'zh-only') && translatedSentences === 0}
+                  disabled={(nextMode === 'de-zh' || nextMode === 'zh-only') && !isPublished && translatedSentences === 0}
                   className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
                     mode === nextMode ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-700'
-                  } ${((nextMode === 'de-zh' || nextMode === 'zh-only') && translatedSentences === 0) ? 'opacity-40 cursor-not-allowed' : ''}`}
+                  } ${((nextMode === 'de-zh' || nextMode === 'zh-only') && !isPublished && translatedSentences === 0) ? 'opacity-40 cursor-not-allowed' : ''}`}
                 >
                   {nextMode === 'de-zh' ? '德中' : nextMode === 'de-only' ? '德语' : '中文'}
                 </button>
@@ -190,17 +257,20 @@ export default function LecturePage() {
             {lecture.lecture_date && <span>{lecture.lecture_date}</span>}
             <span>{paragraphs.length} 段</span>
             <span>{translatedSentences}/{totalSentences} 已译</span>
+            {isPublished && <span className="text-emerald-600 font-medium">译文已公开</span>}
           </div>
         </div>
 
-        {!allTranslated && !translating && (
+        {/* Not published: show translate card */}
+        {!isPublished && !translating && (
           <div className="mb-6 bg-gradient-to-r from-blue-50 to-emerald-50 rounded-xl p-5 border border-blue-100/50 text-center">
             <p className="text-slate-600 text-sm mb-2">
-              {translatedSentences === 0 ? '本章尚未翻译' : `已翻译 ${translatedSentences}/${totalSentences} 句`}
+              {translatedSentences === 0 ? '本章译文尚未公开' : `数据库中已有 ${translatedSentences}/${totalSentences} 句译文，但尚未公开`}
             </p>
+            <p className="text-slate-500 text-xs mb-3">贡献点数翻译本讲后，译文将对所有用户可见</p>
             {token ? (
               <button onClick={handleTranslate} className="px-5 py-2 rounded-lg text-sm font-medium transition shadow-sm bg-blue-600 text-white hover:bg-blue-700">
-                翻译本章（{costInfo?.cost || 10} 点，余额 {userCredits ?? 0}）
+                贡献点数翻译本讲（{costInfo?.cost || 10} 点，余额 {userCredits ?? 0}）
               </button>
             ) : (
               <Link href="/login" className="inline-block px-5 py-2 rounded-lg text-sm font-medium bg-slate-400 text-white hover:bg-slate-500 transition">
@@ -213,6 +283,61 @@ export default function LecturePage() {
         {translating && (
           <div className="mb-6 bg-amber-50 rounded-xl p-5 border border-amber-100 text-center animate-pulse">
             <p className="text-amber-700">翻译进行中...</p>
+          </div>
+        )}
+
+        {/* Published: Download section */}
+        {isPublished && (
+          <div className="mb-6 bg-white rounded-xl shadow-sm border border-slate-100 p-5">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <p className="text-sm font-medium text-slate-800">PDF 下载</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {hasDownloadAccess
+                    ? '下载权限已开通，请及时下载'
+                    : `消耗 ${downloadCost} 点获得 PDF 下载权限`}
+                </p>
+              </div>
+              {hasDownloadAccess ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded">请及时下载已解锁内容。本网站不保证长期运行或永久提供访问。</span>
+                  <a
+                    href={getDownloadUrl(lectureId)}
+                    className="px-4 py-2 rounded-lg text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700 transition"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    下载 PDF
+                  </a>
+                </div>
+              ) : token ? (
+                <button
+                  onClick={handlePurchaseDownload}
+                  disabled={purchasing}
+                  className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition"
+                >
+                  {purchasing ? '购买中...' : `消耗 ${downloadCost} 点下载 PDF`}
+                </button>
+              ) : (
+                <Link href="/login" className="px-4 py-2 rounded-lg text-sm font-medium bg-slate-400 text-white hover:bg-slate-500 transition">
+                  登录后下载
+                </Link>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Contributors display */}
+        {contributions.length > 0 && (
+          <div className="mb-6 bg-white rounded-xl shadow-sm border border-slate-100 p-4">
+            <p className="text-xs text-slate-500 mb-1">贡献者</p>
+            <div className="flex flex-wrap gap-2">
+              {contributions.map((c, i) => (
+                <span key={i} className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
+                  {c.username} ({c.contribution_type === 'first_translation' ? '首次翻译' : c.contribution_type === 'revision' ? '修订' : '下载'})
+                </span>
+              ))}
+            </div>
           </div>
         )}
 
@@ -230,6 +355,23 @@ export default function LecturePage() {
                     index={si + 1}
                     showZh={showTranslation.has(sent.id)}
                     onToggle={() => toggleSentence(sent.id)}
+                    canEdit={canEdit}
+                    editingSentenceId={editingSentenceId}
+                    editField={editField}
+                    editValue={editValue}
+                    editMsg={editMsg}
+                    editTransCost={editTransCost}
+                    editSourceCost={editSourceCost}
+                    userCredits={userCredits}
+                    onEditClick={(sid: number, field: 'text_de' | 'text_zh', currentValue: string) => {
+                      setEditingSentenceId(sid);
+                      setEditField(field);
+                      setEditValue(currentValue);
+                      setEditMsg(null);
+                    }}
+                    onEditCancel={() => { setEditingSentenceId(null); setEditMsg(null); }}
+                    onEditSave={handleEditSentence}
+                    onEditValueChange={setEditValue}
                   />
                 ))}
               </div>
@@ -275,6 +417,18 @@ function SentenceView({
   index,
   showZh,
   onToggle,
+  canEdit,
+  editingSentenceId,
+  editField,
+  editValue,
+  editMsg,
+  editTransCost,
+  editSourceCost,
+  userCredits,
+  onEditClick,
+  onEditCancel,
+  onEditSave,
+  onEditValueChange,
 }: {
   sentence: Sentence;
   mode: ReadingMode;
@@ -282,22 +436,77 @@ function SentenceView({
   index: number;
   showZh: boolean;
   onToggle: () => void;
+  canEdit: boolean;
+  editingSentenceId: number | null;
+  editField: 'text_de' | 'text_zh';
+  editValue: string;
+  editMsg: string | null;
+  editTransCost: number;
+  editSourceCost: number;
+  userCredits: number | null;
+  onEditClick: (sid: number, field: 'text_de' | 'text_zh', currentValue: string) => void;
+  onEditCancel: () => void;
+  onEditSave: (sid: number) => void;
+  onEditValueChange: (val: string) => void;
 }) {
   const de = sentence.content_de || sentence.text_de || '';
   const zh = sentence.content_zh || sentence.text_zh || '';
   const hasTranslation = !!zh;
   const [localShow, setLocalShow] = useState(false);
   const isZhVisible = mode === 'de-zh' || mode === 'zh-only' || showZh || localShow;
+  const isEditing = editingSentenceId === sentence.id;
+  const editCost = editField === 'text_zh' ? editTransCost : editSourceCost;
 
-  if (mode === 'zh-only') {
+  if (isEditing) {
     return (
       <div className="flex items-start gap-2">
         <span className="text-xs text-slate-300 font-mono shrink-0 min-w-[3rem] text-right select-none">§{paragraphIndex}.{index}</span>
+        <div className="flex-1 space-y-2">
+          <div className="flex gap-2">
+            <select
+              value={editField}
+              onChange={e => onEditClick(sentence.id, e.target.value as 'text_de' | 'text_zh', e.target.value === 'text_de' ? de : zh)}
+              className="text-xs border border-slate-200 rounded px-2 py-1 bg-white"
+            >
+              <option value="text_zh">编辑译文</option>
+              <option value="text_de">编辑原文</option>
+            </select>
+            <span className="text-xs text-slate-400 self-center">消耗 {editCost} 点（余额 {userCredits ?? 0}）</span>
+          </div>
+          <textarea
+            value={editValue}
+            onChange={e => onEditValueChange(e.target.value)}
+            className="w-full border border-slate-200 rounded-lg p-2 text-sm text-slate-800 min-h-[60px]"
+            rows={3}
+          />
+          {editMsg && <p className="text-xs text-red-500">{editMsg}</p>}
+          <div className="flex gap-2">
+            <button onClick={() => onEditSave(sentence.id)} className="px-3 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-700">保存</button>
+            <button onClick={onEditCancel} className="px-3 py-1 text-xs rounded bg-slate-100 text-slate-600 hover:bg-slate-200">取消</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (mode === 'zh-only') {
+    return (
+      <div className="flex items-start gap-2 group">
+        <span className="text-xs text-slate-300 font-mono shrink-0 min-w-[3rem] text-right select-none">§{paragraphIndex}.{index}</span>
         {sentence.image_url && <ImageView url={sentence.image_url} />}
         {hasTranslation ? (
-          <p className="text-slate-700 leading-relaxed text-[15px]">{zh}</p>
+          <p className="text-slate-700 leading-relaxed text-[15px] flex-1">{zh}</p>
         ) : (
-          <p className="text-slate-300 italic text-sm">（未翻译）</p>
+          <p className="text-slate-300 italic text-sm flex-1">（未翻译）</p>
+        )}
+        {canEdit && hasTranslation && (
+          <button
+            onClick={() => onEditClick(sentence.id, 'text_zh', zh)}
+            className="shrink-0 text-[10px] text-slate-300 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition"
+            title="编辑译文"
+          >
+            ✎
+          </button>
         )}
       </div>
     );
@@ -308,20 +517,49 @@ function SentenceView({
       <div className="flex items-start gap-2 group cursor-pointer" onClick={() => hasTranslation && setLocalShow(true)}>
         <span className="text-xs text-slate-300 font-mono shrink-0 min-w-[3rem] text-right select-none">§{paragraphIndex}.{index}</span>
         {sentence.image_url && <ImageView url={sentence.image_url} />}
-        <p className="text-slate-800 leading-relaxed text-[15px] group-hover:text-blue-700 transition">{de}</p>
+        <p className="text-slate-800 leading-relaxed text-[15px] group-hover:text-blue-700 transition flex-1">{de}</p>
         {hasTranslation && <span className="shrink-0 text-[10px] text-blue-400 opacity-0 group-hover:opacity-100 transition mt-1">译</span>}
+        {canEdit && (
+          <button
+            onClick={e => { e.stopPropagation(); onEditClick(sentence.id, 'text_de', de); }}
+            className="shrink-0 text-[10px] text-slate-300 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition"
+            title="编辑原文"
+          >
+            ✎
+          </button>
+        )}
       </div>
     );
   }
 
   return (
-    <div className="flex items-start gap-2" onDoubleClick={onToggle}>
+    <div className="flex items-start gap-2 group" onDoubleClick={onToggle}>
       <span className="text-xs text-slate-300 font-mono shrink-0 min-w-[3rem] text-right select-none">§{paragraphIndex}.{index}</span>
       <div className="flex-1">
         {sentence.image_url && <ImageView url={sentence.image_url} />}
         <p className="text-slate-800 leading-relaxed text-[15px]">{de}</p>
         {hasTranslation && isZhVisible && <p className="text-slate-500 text-sm mt-1 leading-relaxed">{zh}</p>}
       </div>
+      {canEdit && (
+        <div className="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition">
+          <button
+            onClick={() => onEditClick(sentence.id, 'text_de', de)}
+            className="text-[10px] text-slate-300 hover:text-blue-500"
+            title="编辑原文 ({editSourceCost}点)"
+          >
+            ✎ D
+          </button>
+          {hasTranslation && (
+            <button
+              onClick={() => onEditClick(sentence.id, 'text_zh', zh)}
+              className="text-[10px] text-slate-300 hover:text-emerald-500"
+              title="编辑译文 ({editTransCost}点)"
+            >
+              ✎ 中
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

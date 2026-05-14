@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db.database import get_db
-from app.db.models import Paragraph, Sentence
+from app.db.models import Paragraph, Sentence, Lecture
 from app.models.schemas import SentenceResponse
 
 router = APIRouter(prefix="/api/paragraphs", tags=["paragraphs"])
@@ -18,6 +18,14 @@ async def get_paragraph_sentences(
     db: AsyncSession = Depends(get_db),
 ):
     """Get all sentences for a paragraph, ordered by order_index."""
+    # Check lecture publication status
+    pub_result = await db.execute(
+        select(Lecture.is_published)
+        .join(Paragraph)
+        .where(Paragraph.id == paragraph_id)
+    )
+    is_published = pub_result.scalar() or False
+
     result = await db.execute(
         select(Sentence)
         .where(Sentence.paragraph_id == paragraph_id)
@@ -28,10 +36,10 @@ async def get_paragraph_sentences(
         SentenceResponse(
             id=s.id,
             text_de=s.text_de,
-            text_zh=s.text_zh,
+            text_zh=(s.text_zh if is_published else None),
             order_index=s.order_index,
             content_de=s.text_de,
-            content_zh=s.text_zh,
+            content_zh=(s.text_zh if is_published else None),
             paragraph_id=paragraph_id,
             sentence_index=s.order_index,
             is_heading=False,

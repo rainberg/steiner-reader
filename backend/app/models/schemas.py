@@ -173,3 +173,94 @@ class TranslationJobResponse(BaseModel):
 
 class TranslateRequest(BaseModel):
     book_id: int
+
+
+class UploadResponse(BaseModel):
+    book_id: Optional[int] = None
+    message: str
+    ga_number: Optional[str] = None
+    stats: Optional[dict] = None
+
+
+# --- Credit Settings ---
+
+class CreditSettingResponse(BaseModel):
+    id: int
+    key: str
+    value: int
+    description: Optional[str] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class CreditSettingUpdateRequest(BaseModel):
+    value: int
+
+
+# --- Credit Transactions ---
+
+class CreditTransactionResponse(BaseModel):
+    id: int
+    user_id: int
+    amount: int
+    balance_after: int
+    transaction_type: str
+    reference_type: Optional[str] = None
+    reference_id: Optional[int] = None
+    description: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# --- Contributions ---
+
+class ContributionDisplay(BaseModel):
+    username: str
+    contribution_type: str
+    created_at: datetime
+
+
+# --- Downloads ---
+
+class DownloadPermission(BaseModel):
+    has_permission: bool
+    access_types: list[str] = []
+
+
+class PurchaseResult(BaseModel):
+    success: bool
+    credits_remaining: int
+    message: str
+
+
+# --- Sentence Editing ---
+
+class EditSentenceRequest(BaseModel):
+    field: str  # "text_de" or "text_zh"
+    new_value: str
+
+
+class EditSentenceResult(BaseModel):
+    success: bool
+    new_text: str
+    cost: int
+    credits_remaining: int
+
+
+class EditLogEntry(BaseModel):
+    id: int
+    user_id: int
+    username: str
+    sentence_id: int
+    field_changed: str
+    old_value: Optional[str] = None
+    new_value: Optional[str] = None
+    credits_cost: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

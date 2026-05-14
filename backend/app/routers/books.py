@@ -6,8 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db.database import get_db
-from app.db.models import Book, Lecture, Paragraph, Sentence
+from app.db.models import Book, Lecture, Paragraph, Sentence, User
 from app.models.schemas import BookResponse, BookDetail, BookSummary, LectureResponse, LectureSummary, LectureListItem
+from app.routers.auth import get_current_user
 
 router = APIRouter(prefix="/api/books", tags=["books"])
 
@@ -308,6 +309,7 @@ async def get_lecture(
     book_id: int,
     lecture_id: int,
     db: AsyncSession = Depends(get_db),
+    user: User | None = Depends(get_current_user),
 ):
     """Get a specific lecture with all paragraphs and sentences (for reader page)."""
     result = await db.execute(
@@ -324,8 +326,13 @@ async def get_lecture(
         raise HTTPException(status_code=404, detail="Lecture not found")
 
     from app.routers.lectures import _build_paragraph_response
+    from app.services.credit_service import (
+        get_contributions, check_download_access, get_access_types, get_credit_price,
+    )
     from sqlalchemy import text as sa_text
-    
+
+    is_published = lecture.is_published or False
+
     # 查询该讲座的图片 -> sentence_id 映射（动态获取 GA 号）
     img_result = await db.execute(
         sa_text("SELECT li.after_sentence_id, li.filename, b.ga_number FROM lecture_images li " +
@@ -339,7 +346,19 @@ async def get_lecture(
         if row[0]:
             ga = row[2] if row[2] else "GA279"
             image_map[row[0]] = f"/api/images/{ga}/{row[1]}"
-    
+
+    # Contributions (for display)
+    contributions = await get_contributions(db, lecture_id)
+
+    # Download permission
+    can_download_pdf = False
+    if user:
+        can_download_pdf = await check_download_access(db, user, lecture_id)
+
+    # Edit costs
+    edit_translation_cost = await get_credit_price(db, "edit_translation_sentence")
+    edit_source_cost = await get_credit_price(db, "edit_source_sentence")
+
     return {
         "id": lecture.id,
         "book_id": lecture.book_id,
@@ -348,5 +367,12 @@ async def get_lecture(
         "title_zh": lecture.title_zh,
         "lecture_date": str(lecture.lecture_date) if lecture.lecture_date else None,
         "location": lecture.location,
-        "paragraphs": [_build_paragraph_response(p, image_map) for p in lecture.paragraphs],
+        "is_published": is_published,
+        "contributors": contributions,
+        "can_download_pdf": can_download_pdf,
+        "can_edit": is_published and user is not None,
+        "download_notice": "请及时下载已解锁内容。本网站不保证长期运行或永久提供访问。",
+        "edit_translation_cost": edit_translation_cost,
+        "edit_source_cost": edit_source_cost,
+        "paragraphs": [_build_paragraph_response(p, image_map, is_published) for p in lecture.paragraphs],
     }

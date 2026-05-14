@@ -58,6 +58,13 @@ export interface Lecture {
   translated_count?: number;
   image_count?: number;
   paragraphs?: Paragraph[];
+  is_published?: boolean;
+  contributors?: ContributionDisplay[];
+  can_download_pdf?: boolean;
+  can_edit?: boolean;
+  download_notice?: string;
+  edit_translation_cost?: number;
+  edit_source_cost?: number;
 }
 
 export interface Book {
@@ -120,8 +127,17 @@ export interface TranslationCost {
   remaining: number;
   cost: number;
   already_translated: boolean;
+  is_published: boolean;
   user_credits: number | null;
   can_afford: boolean | null;
+}
+
+export interface TranslationStatus {
+  lecture_id: number;
+  total: number;
+  translated: number;
+  completed: boolean;
+  is_translating?: boolean;
 }
 
 export interface TranslationStatus {
@@ -404,5 +420,146 @@ export async function adminResetPassword(userId: number, newPassword: string): P
     const err = await res.json().catch(() => ({ detail: '重置密码失败' }));
     throw new Error(err.detail || '重置密码失败');
   }
+  return res.json();
+}
+
+// --- Download ---
+
+export interface DownloadPermission {
+  has_permission: boolean;
+  access_types: string[];
+}
+
+export interface PurchaseResult {
+  success: boolean;
+  credits_remaining: number;
+  message: string;
+}
+
+export async function getDownloadPermission(lectureId: number): Promise<DownloadPermission> {
+  const res = await authFetch(`/api/lectures/${lectureId}/download-permission`, { cache: 'no-store' });
+  if (!res.ok) return { has_permission: false, access_types: [] };
+  return res.json();
+}
+
+export async function purchaseDownloadAccess(lectureId: number): Promise<PurchaseResult> {
+  const res = await authFetch(`/api/lectures/${lectureId}/purchase-download`, { method: 'POST' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '购买失败' }));
+    throw new Error(err.detail || '购买失败');
+  }
+  return res.json();
+}
+
+export function getDownloadUrl(lectureId: number): string {
+  return `${API_BASE}/api/lectures/${lectureId}/download`;
+}
+
+// --- Sentence Editing ---
+
+export interface EditSentenceRequest {
+  field: 'text_de' | 'text_zh';
+  new_value: string;
+}
+
+export interface EditSentenceResult {
+  success: boolean;
+  new_text: string;
+  cost: number;
+  credits_remaining: number;
+}
+
+export async function editSentence(sentenceId: number, data: EditSentenceRequest): Promise<EditSentenceResult> {
+  const res = await authFetch(`/api/sentences/${sentenceId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '编辑失败' }));
+    throw new Error(err.detail || '编辑失败');
+  }
+  return res.json();
+}
+
+export interface EditLogEntry {
+  id: number;
+  user_id: number;
+  username: string;
+  sentence_id: number;
+  field_changed: string;
+  old_value: string | null;
+  new_value: string | null;
+  credits_cost: number;
+  created_at: string;
+}
+
+export async function fetchSentenceEdits(sentenceId: number): Promise<EditLogEntry[]> {
+  const res = await timedFetch(`${API_BASE}/api/sentences/${sentenceId}/edits`, { cache: 'no-store' });
+  if (!res.ok) return [];
+  return res.json();
+}
+
+// --- Contributions ---
+
+export interface ContributionDisplay {
+  username: string;
+  contribution_type: string;
+  created_at: string;
+}
+
+export async function fetchContributions(lectureId: number): Promise<ContributionDisplay[]> {
+  const res = await timedFetch(`${API_BASE}/api/lectures/${lectureId}/contributions`, { cache: 'no-store' });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.contributions || [];
+}
+
+// --- Credit Settings (Admin) ---
+
+export interface CreditSetting {
+  id: number;
+  key: string;
+  value: number;
+  description: string | null;
+  updated_at: string | null;
+}
+
+export async function fetchCreditSettings(): Promise<CreditSetting[]> {
+  const res = await authFetch('/api/admin/credit-settings', { cache: 'no-store' });
+  if (!res.ok) throw new Error('获取积分设置失败');
+  return res.json();
+}
+
+export async function updateCreditSetting(key: string, value: number): Promise<CreditSetting> {
+  const res = await authFetch(`/api/admin/credit-settings/${key}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ value }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '更新失败' }));
+    throw new Error(err.detail || '更新失败');
+  }
+  return res.json();
+}
+
+// --- Credit Transactions ---
+
+export interface CreditTransaction {
+  id: number;
+  user_id: number;
+  amount: number;
+  balance_after: number;
+  transaction_type: string;
+  reference_type: string | null;
+  reference_id: number | null;
+  description: string | null;
+  created_at: string;
+}
+
+export async function fetchMyTransactions(userId: number, page: number = 1): Promise<{ transactions: CreditTransaction[]; total: number }> {
+  const res = await authFetch(`/api/users/${userId}/transactions?page=${page}&limit=50`, { cache: 'no-store' });
+  if (!res.ok) throw new Error('获取交易记录失败');
   return res.json();
 }

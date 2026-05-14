@@ -18,6 +18,14 @@ class Settings(BaseSettings):
     # File storage
     UPLOAD_DIR: str = "/opt/steiner-reader/uploads"
 
+    # Credit pricing defaults (overridden by credit_settings table)
+    CREDIT_TRANSLATE_LECTURE: int = 10
+    CREDIT_TRANSLATE_BOOK: int = 100
+    CREDIT_EDIT_TRANSLATION_SENTENCE: int = 2
+    CREDIT_EDIT_SOURCE_SENTENCE: int = 3
+    CREDIT_DOWNLOAD_LECTURE_PDF: int = 5
+    CREDIT_DOWNLOAD_BOOK_PDF: int = 50
+
     # App
     APP_NAME: str = "Steiner Reader"
     DEBUG: bool = False

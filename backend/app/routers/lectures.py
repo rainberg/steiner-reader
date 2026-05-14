@@ -13,18 +13,20 @@ from app.models.schemas import ParagraphResponse, SentenceResponse
 router = APIRouter(prefix="/api/lectures", tags=["lectures"])
 
 
-def _build_paragraph_response(para, image_map=None) -> ParagraphResponse:
-    """Build a ParagraphResponse with all frontend fields populated."""
+def _build_paragraph_response(para, image_map=None, is_published: bool = True) -> ParagraphResponse:
+    """Build a ParagraphResponse with all frontend fields populated.
+    When is_published is False, all text_zh / content_zh are set to None.
+    """
     if image_map is None:
         image_map = {}
     sentences = [
         SentenceResponse(
             id=s.id,
             text_de=s.text_de,
-            text_zh=s.text_zh,
+            text_zh=(s.text_zh if is_published else None),
             order_index=s.order_index,
             content_de=s.text_de,
-            content_zh=s.text_zh,
+            content_zh=(s.text_zh if is_published else None),
             paragraph_id=para.id,
             sentence_index=s.order_index,
             is_heading=False,
@@ -32,9 +34,11 @@ def _build_paragraph_response(para, image_map=None) -> ParagraphResponse:
         )
         for s in para.sentences
     ]
-    # Build content_de from sentences
     content_de = " ".join(s.text_de for s in para.sentences) if para.sentences else ""
-    content_zh = " ".join(s.text_zh for s in para.sentences if s.text_zh) if para.sentences else None
+    content_zh = (
+        " ".join(s.text_zh for s in para.sentences if s.text_zh)
+        if para.sentences and is_published else None
+    )
     return ParagraphResponse(
         id=para.id,
         order_index=para.order_index,
@@ -52,6 +56,12 @@ async def get_lecture_paragraphs(
     db: AsyncSession = Depends(get_db),
 ):
     """Get all paragraphs for a lecture, ordered by order_index, with sentences eager loaded."""
+    # Check publication status
+    lec_result = await db.execute(
+        select(Lecture.is_published).where(Lecture.id == lecture_id)
+    )
+    is_published = lec_result.scalar() or False
+
     result = await db.execute(
         select(Paragraph)
         .where(Paragraph.lecture_id == lecture_id)
@@ -59,7 +69,7 @@ async def get_lecture_paragraphs(
         .order_by(Paragraph.order_index)
     )
     paragraphs = result.scalars().all()
-    
+
     # 查询图片映射，动态获取 ga_number
     from sqlalchemy import text as sa_text
     img_sql = "SELECT li.after_sentence_id, li.filename, b.ga_number "
@@ -75,9 +85,9 @@ async def get_lecture_paragraphs(
     for row in img_result:
         if row[0]:
             ga = row[2] if row[2] else "GA279"
-            image_map[row[0]] = f"/api/images/{ga}/{row[1]}" 
-    
-    return [_build_paragraph_response(p, image_map) for p in paragraphs]
+            image_map[row[0]] = f"/api/images/{ga}/{row[1]}"
+
+    return [_build_paragraph_response(p, image_map, is_published) for p in paragraphs]
 
 
 @router.get("/{lecture_id}", response_model=dict)
@@ -100,4 +110,5 @@ async def get_lecture_simple(
         "title_zh": lecture.title_zh,
         "lecture_date": str(lecture.lecture_date) if lecture.lecture_date else None,
         "location": lecture.location,
+        "is_published": lecture.is_published,
     }
