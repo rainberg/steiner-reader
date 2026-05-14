@@ -40,7 +40,7 @@ async def list_book_summaries(
             FROM lectures l
             JOIN paragraphs p ON p.lecture_id = l.id
             JOIN sentences s ON s.paragraph_id = p.id
-            WHERE s.text_zh IS NOT NULL AND s.text_zh != ''
+            WHERE s.text_zh IS NOT NULL AND s.text_zh != '' AND l.is_published = true
             GROUP BY l.book_id
         ),
         image_counts AS (
@@ -209,7 +209,7 @@ async def list_books(db: AsyncSession = Depends(get_db)):
                 order_index=lec.order_index,
                 sentence_count=sentence_count,
                 image_count=lec_image_count,
-                translated_count=translated_count,
+                translated_count=translated_count if lec.is_published else 0,
                 level=lec.level,
                 parent_id=lec.parent_id,
             ))
@@ -286,7 +286,7 @@ async def get_book(book_id: int, db: AsyncSession = Depends(get_db)):
             order_index=lec.order_index,
             sentence_count=total,
             image_count=image_count,
-            translated_count=translated,
+            translated_count=translated if lec.is_published else 0,
             level=lec.level,
             parent_id=lec.parent_id,
         ))
