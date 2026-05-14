@@ -380,7 +380,33 @@ export default function LecturePage() {
           ))}
         </div>
 
-        <div className="mt-8 text-center">
+        {/* Bottom download button — easy to find after reading */}
+        {isPublished && hasDownloadAccess && (
+          <div className="mt-8 text-center">
+            <span className="text-xs text-amber-600 block mb-2">请及时下载已解锁内容。本网站不保证长期运行或永久提供访问。</span>
+            <a
+              href={getDownloadUrl(lectureId)}
+              className="inline-block px-6 py-2.5 rounded-lg text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-sm"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              下载 PDF
+            </a>
+          </div>
+        )}
+        {isPublished && !hasDownloadAccess && token && (
+          <div className="mt-8 text-center">
+            <button
+              onClick={handlePurchaseDownload}
+              disabled={purchasing}
+              className="inline-block px-6 py-2.5 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition shadow-sm"
+            >
+              {purchasing ? '购买中...' : `消耗 ${downloadCost} 点获得 PDF 下载权限`}
+            </button>
+          </div>
+        )}
+
+        <div className="mt-6 text-center">
           <Link href={`/books/${bookId}`} className="text-blue-600 hover:underline text-sm">
             返回目录
           </Link>
