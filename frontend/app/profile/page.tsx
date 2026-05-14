@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { clearAuth, fetchMe, getStoredUser, User, changePassword, changeEmail, fetchMyTransactions, CreditTransaction } from '@/lib/api';
+import { clearAuth, fetchMe, getStoredUser, User, changePassword, changeEmail, changeUsername, fetchMyTransactions, CreditTransaction } from '@/lib/api';
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -22,6 +22,12 @@ export default function ProfilePage() {
   const [emailLoading, setEmailLoading] = useState(false);
   const [emailError, setEmailError] = useState('');
   const [emailSuccess, setEmailSuccess] = useState('');
+
+  const [newUsername, setNewUsername] = useState('');
+  const [usernamePassword, setUsernamePassword] = useState('');
+  const [usernameLoading, setUsernameLoading] = useState(false);
+  const [usernameError, setUsernameError] = useState('');
+  const [usernameSuccess, setUsernameSuccess] = useState('');
 
   const [transactions, setTransactions] = useState<CreditTransaction[]>([]);
   const [txLoading, setTxLoading] = useState(false);
@@ -111,6 +117,26 @@ export default function ProfilePage() {
       setEmailError(err instanceof Error ? err.message : '修改邮箱失败');
     } finally {
       setEmailLoading(false);
+    }
+  };
+
+  const handleChangeUsername = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setUsernameError('');
+    setUsernameSuccess('');
+    setUsernameLoading(true);
+    try {
+      const res = await changeUsername(newUsername, usernamePassword);
+      setUsernameSuccess(res.message);
+      const u = await fetchMe();
+      setUser(u);
+      localStorage.setItem('steiner_user', JSON.stringify(u));
+      setNewUsername('');
+      setUsernamePassword('');
+    } catch (err: unknown) {
+      setUsernameError(err instanceof Error ? err.message : '修改用户名失败');
+    } finally {
+      setUsernameLoading(false);
     }
   };
 
@@ -210,6 +236,50 @@ export default function ProfilePage() {
           </div>
           <button type="submit" disabled={pwLoading} className="btn-primary w-full">
             {pwLoading ? '修改中...' : '修改密码'}
+          </button>
+        </form>
+      </div>
+
+      {/* 修改用户名 */}
+      <div className="card p-8 mb-6">
+        <h2 className="text-lg font-semibold text-gray-800 mb-4">修改用户名</h2>
+
+        {usernameError && (
+          <div className="bg-red-50/80 border border-red-100 text-red-600 text-sm px-3 py-2 rounded-lg mb-4">
+            {usernameError}
+          </div>
+        )}
+        {usernameSuccess && (
+          <div className="bg-green-50/80 border border-green-100 text-green-600 text-sm px-3 py-2 rounded-lg mb-4">
+            {usernameSuccess}
+          </div>
+        )}
+
+        <form onSubmit={handleChangeUsername} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">新用户名</label>
+            <input
+              type="text"
+              value={newUsername}
+              onChange={e => setNewUsername(e.target.value)}
+              placeholder="输入新用户名 (2-50字符)"
+              required
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">确认密码</label>
+            <input
+              type="password"
+              value={usernamePassword}
+              onChange={e => setUsernamePassword(e.target.value)}
+              placeholder="输入当前密码以确认"
+              required
+              className={inputClass}
+            />
+          </div>
+          <button type="submit" disabled={usernameLoading} className="btn-primary w-full">
+            {usernameLoading ? '修改中...' : '修改用户名'}
           </button>
         </form>
       </div>

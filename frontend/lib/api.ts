@@ -310,11 +310,11 @@ export async function register(username: string, email: string, password: string
   return data;
 }
 
-export async function login(username: string, password: string): Promise<AuthResponse> {
+export async function login(email: string, password: string): Promise<AuthResponse> {
   const res = await timedFetch(`${API_BASE}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ email, password }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: '登录失败' }));
@@ -380,6 +380,19 @@ export async function changeEmail(email: string, password: string): Promise<void
     const err = await res.json().catch(() => ({ detail: '修改邮箱失败' }));
     throw new Error(err.detail || '修改邮箱失败');
   }
+}
+
+export async function changeUsername(username: string, password: string): Promise<{ success: boolean; message: string; username: string }> {
+  const res = await authFetch('/api/auth/change-username', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '修改用户名失败' }));
+    throw new Error(err.detail || '修改用户名失败');
+  }
+  return res.json();
 }
 
 // --- Admin API ---

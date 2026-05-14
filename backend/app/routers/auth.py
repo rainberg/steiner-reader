@@ -32,7 +32,7 @@ class RegisterRequest(BaseModel):
     password: str
 
 class LoginRequest(BaseModel):
-    username: str
+    email: str
     password: str
 
 class TokenResponse(BaseModel):
@@ -130,13 +130,13 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
 
 @router.post("/login", response_model=TokenResponse)
 async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
-    """Login with username and password."""
-    result = await db.execute(select(User).where(User.username == req.username))
+    """Login with email and password."""
+    result = await db.execute(select(User).where(User.email == req.email))
     user = result.scalar_one_or_none()
-    
+
     if not user or not pwd_context.verify(req.password, user.password_hash):
-        raise HTTPException(401, "用户名或密码错误")
-    
+        raise HTTPException(401, "邮箱或密码错误")
+
     token = create_token({"sub": str(user.id)})
     return TokenResponse(
         access_token=token,
@@ -158,6 +158,10 @@ class ChangePasswordRequest(BaseModel):
 
 class ChangeEmailRequest(BaseModel):
     email: str
+    password: str
+
+class ChangeUsernameRequest(BaseModel):
+    username: str
     password: str
 
 
@@ -209,4 +213,36 @@ async def change_email(
         "success": True,
         "message": "邮箱修改成功",
         "email": user.email,
+    }
+
+
+@router.put("/change-username")
+async def change_username(
+    req: ChangeUsernameRequest,
+    user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """修改当前用户名"""
+    if not pwd_context.verify(req.password, user.password_hash):
+        raise HTTPException(400, "密码错误")
+    if len(req.username) < 2 or len(req.username) > 50:
+        raise HTTPException(400, "用户名需要2-50个字符")
+    if req.username == user.username:
+        raise HTTPException(400, "新用户名不能与当前用户名相同")
+
+    # Check if username is already taken by another user
+    existing = await db.execute(
+        select(User).where(User.username == req.username, User.id != user.id)
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(400, "该用户名已被其他用户使用")
+
+    user.username = req.username
+    await db.commit()
+    await db.refresh(user)
+
+    return {
+        "success": True,
+        "message": "用户名修改成功",
+        "username": user.username,
     }
