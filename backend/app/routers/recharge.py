@@ -23,8 +23,11 @@ router = APIRouter(prefix="/api/recharge", tags=["recharge"])
 RECHARGE_DIR = "/opt/steiner-reader/images/recharge"
 PAYMENT_QR_PATH = "/opt/steiner-reader/images/recharge/payment_qr.png"
 
-# Ensure directory exists
-os.makedirs(RECHARGE_DIR, exist_ok=True)
+# Ensure directory exists (ignore error outside production)
+try:
+    os.makedirs(RECHARGE_DIR, exist_ok=True)
+except PermissionError:
+    pass
 
 
 # ── Schemas ────────────────────────────────────────────────────

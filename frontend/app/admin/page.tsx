@@ -561,12 +561,11 @@ function CreditSettingsTab({
   const [msg, setMsg] = useState("");
 
   const LABELS: Record<string, string> = {
-    translate_lecture: "翻译单章 (每次)",
-    translate_book: "翻译全书 (每次)",
-    edit_translation_sentence: "编辑译文 (每次)",
-    edit_source_sentence: "编辑原文 (每次)",
-    download_lecture_pdf: "单章PDF下载权限",
-    download_book_pdf: "全书PDF下载权限",
+    translate_coefficient: "翻译系数 (每句×系数)",
+    edit_translation_coefficient: "编辑译文系数 (每句×系数)",
+    edit_source_coefficient: "编辑原文系数 (每句×系数)",
+    download_lecture_price: "单章下载 (0=免费)",
+    download_book_price: "全书下载 (0=免费)",
   };
 
   const handleSave = async (key: string) => {

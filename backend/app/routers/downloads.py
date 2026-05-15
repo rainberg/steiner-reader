@@ -11,7 +11,7 @@ from app.db.database import get_db
 from app.db.models import User, Lecture, Book, Paragraph, Sentence
 from app.routers.auth import require_user, get_current_user
 from app.services.credit_service import (
-    get_credit_price, atomic_deduct_credits, grant_access, add_contribution,
+    compute_price, atomic_deduct_credits, grant_access, add_contribution,
     check_download_access, get_access_types, get_contributions,
 )
 from app.config import settings
@@ -40,7 +40,7 @@ async def purchase_download(
     if await check_download_access(db, user, lecture_id):
         raise HTTPException(status_code=400, detail="您已拥有下载权限")
 
-    cost = await get_credit_price(db, "download_lecture_pdf")
+    cost = await compute_price(db, "download_lecture_price", 0)
 
     try:
         new_credits = await atomic_deduct_credits(

@@ -10,7 +10,7 @@ from app.db.database import get_db
 from app.db.models import User, Sentence, Paragraph, Lecture, EditAuditLog
 from app.routers.auth import require_user
 from app.services.credit_service import (
-    get_credit_price, atomic_deduct_credits, add_contribution, grant_access,
+    compute_price, atomic_deduct_credits, add_contribution, grant_access,
 )
 from app.models.schemas import EditSentenceRequest, EditSentenceResult, EditLogEntry
 
@@ -50,7 +50,7 @@ async def edit_sentence(
         raise HTTPException(status_code=400, detail="译文尚未公开，无法编辑")
 
     price_key = VALID_FIELDS[req.field]
-    cost = await get_credit_price(db, price_key)
+    cost = await compute_price(db, price_key, 1)
 
     old_value = getattr(sentence, req.field)
 

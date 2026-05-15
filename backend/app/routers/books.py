@@ -327,7 +327,7 @@ async def get_lecture(
 
     from app.routers.lectures import _build_paragraph_response
     from app.services.credit_service import (
-        get_contributions, check_download_access, get_access_types, get_credit_price,
+        get_contributions, check_download_access, get_access_types, compute_price,
     )
     from sqlalchemy import text as sa_text
 
@@ -356,9 +356,9 @@ async def get_lecture(
         can_download_pdf = await check_download_access(db, user, lecture_id)
 
     # Edit costs
-    edit_translation_cost = await get_credit_price(db, "edit_translation_sentence")
-    edit_source_cost = await get_credit_price(db, "edit_source_sentence")
-    download_lecture_cost = await get_credit_price(db, "download_lecture_pdf")
+    edit_translation_cost = await compute_price(db, "edit_translation_coefficient", 1)
+    edit_source_cost = await compute_price(db, "edit_source_coefficient", 1)
+    download_lecture_cost = await compute_price(db, "download_lecture_pdf", 0)
 
     return {
         "id": lecture.id,

@@ -12,7 +12,7 @@ from app.db.models import Lecture, Paragraph, Sentence, User
 from app.routers.auth import require_user, get_current_user
 from app.services.translator import translate_lecture_sentences
 from app.services.credit_service import (
-    get_credit_price, atomic_deduct_credits, add_contribution, grant_access,
+    compute_price, atomic_deduct_credits, add_contribution, grant_access,
     get_contributions, check_download_access, get_access_types,
 )
 
@@ -76,8 +76,9 @@ async def translate_lecture(
     )
     translated = translated_result.scalar() or 0
 
-    # Determine cost
-    cost = await get_credit_price(db, "translate_lecture")
+    # Determine cost by sentence count × coefficient (or manual override)
+    remaining = total - translated
+    cost = await compute_price(db, "translate_lecture", remaining if remaining > 0 else total)
 
     # Atomic deduction
     try:
@@ -97,7 +98,6 @@ async def translate_lecture(
     await db.commit()
 
     # Decide: simulate or real translation
-    remaining = total - translated
     if remaining == 0:
         # All sentences already have text_zh — simulate progress then publish
         lecture.is_translating = True
@@ -151,7 +151,8 @@ async def get_translation_cost(
     )
     translated = translated_result.scalar() or 0
 
-    cost = await get_credit_price(db, "translate_lecture")
+    remaining = total - translated
+    cost = await compute_price(db, "translate_lecture", remaining) if remaining > 0 else 0
 
     # Check publication status
     lecture_result = await db.execute(
@@ -163,7 +164,7 @@ async def get_translation_cost(
         "lecture_id": lecture_id,
         "total": total,
         "translated": translated,
-        "remaining": total - translated,
+        "remaining": remaining,
         "cost": 0 if (total > 0 and translated == total and is_published) else cost,
         "already_translated": total > 0 and translated == total,
         "is_published": is_published,

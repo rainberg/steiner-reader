@@ -12,34 +12,73 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_PRICES = {
-    "translate_lecture": settings.CREDIT_TRANSLATE_LECTURE,
-    "translate_book": settings.CREDIT_TRANSLATE_BOOK,
-    "edit_translation_sentence": settings.CREDIT_EDIT_TRANSLATION_SENTENCE,
-    "edit_source_sentence": settings.CREDIT_EDIT_SOURCE_SENTENCE,
-    "download_lecture_pdf": settings.CREDIT_DOWNLOAD_LECTURE_PDF,
-    "download_book_pdf": settings.CREDIT_DOWNLOAD_BOOK_PDF,
+COEFFICIENTS = {
+    "translate_coefficient": settings.CREDIT_TRANSLATE_COEFFICIENT,
+    "edit_translation_coefficient": settings.CREDIT_EDIT_TRANSLATION_COEFFICIENT,
+    "edit_source_coefficient": settings.CREDIT_EDIT_SOURCE_COEFFICIENT,
+    "download_lecture_price": settings.CREDIT_DOWNLOAD_LECTURE_PRICE,
+    "download_book_price": settings.CREDIT_DOWNLOAD_BOOK_PRICE,
 }
 
 DEFAULT_DESCRIPTIONS = {
-    "translate_lecture": "翻译单章 (每次)",
-    "translate_book": "翻译全书 (每次)",
-    "edit_translation_sentence": "编辑译文 (每次)",
-    "edit_source_sentence": "编辑原文 (每次)",
-    "download_lecture_pdf": "单章PDF下载权限",
-    "download_book_pdf": "全书PDF下载权限",
+    "translate_coefficient": "翻译系数 (每句点数)",
+    "edit_translation_coefficient": "编辑译文系数 (每句点数)",
+    "edit_source_coefficient": "编辑原文系数 (每句点数)",
+    "download_lecture_price": "单章下载",
+    "download_book_price": "全书下载",
 }
 
 
 async def get_credit_price(db: AsyncSession, key: str) -> int:
-    """Read price from credit_settings table, or fall back to config default."""
+    """Read manual price override from credit_settings. Returns 0 if not set
+    (meaning use coefficient calculation instead)."""
     result = await db.execute(
         select(CreditSetting).where(CreditSetting.key == key)
     )
     row = result.scalar_one_or_none()
-    if row:
+    if row and row.value is not None:
         return row.value
-    return DEFAULT_PRICES.get(key, 10)
+    return 0  # 0 means "not manually set, use coefficient"
+
+
+async def get_coefficient(db: AsyncSession, key: str) -> float:
+    """Get pricing coefficient from credit_settings or config default."""
+    result = await db.execute(
+        select(CreditSetting).where(CreditSetting.key == key)
+    )
+    row = result.scalar_one_or_none()
+    if row and row.value is not None:
+        return float(row.value)
+    return COEFFICIENTS.get(key, 1.0)
+
+
+async def compute_price(db: AsyncSession, key: str, sentence_count: int = 1) -> int:
+    """Compute price: manual override if set, otherwise coefficient × sentence_count.
+    For download keys, return the manual price or 0 directly.
+    """
+    # Check manual override
+    manual = await get_credit_price(db, key)
+    if manual > 0:
+        return manual
+
+    # Coefficient-based calculation
+    if key in ("translate_lecture", "translate_book", "translate_coefficient"):
+        coeff = await get_coefficient(db, "translate_coefficient")
+        return max(1, int(sentence_count * coeff))
+    elif key in ("edit_translation_sentence", "edit_translation_coefficient"):
+        coeff = await get_coefficient(db, "edit_translation_coefficient")
+        return max(0, int(coeff))
+    elif key in ("edit_source_sentence", "edit_source_coefficient"):
+        coeff = await get_coefficient(db, "edit_source_coefficient")
+        return max(0, int(coeff))
+    elif key in ("download_lecture_pdf", "download_lecture_price"):
+        return manual  # 0 = free
+    elif key in ("download_book_pdf", "download_book_price"):
+        return manual  # 0 = free
+
+    # Fallback: try as coefficient
+    coeff = await get_coefficient(db, key)
+    return max(1, int(sentence_count * coeff))
 
 
 async def atomic_deduct_credits(
@@ -193,16 +232,16 @@ async def get_contributions(db: AsyncSession, lecture_id: int) -> list[dict]:
 
 
 async def seed_default_settings(db: AsyncSession):
-    """Insert default credit settings if the table is empty."""
+    """Insert default credit coefficients if the table is empty."""
     result = await db.execute(select(CreditSetting).limit(1))
     if result.scalar_one_or_none():
         return  # already seeded
 
-    for key, value in DEFAULT_PRICES.items():
+    for key, value in COEFFICIENTS.items():
         db.add(CreditSetting(
             key=key,
-            value=value,
+            value=int(value) if isinstance(value, float) and value == int(value) else value,
             description=DEFAULT_DESCRIPTIONS.get(key, ""),
         ))
     await db.commit()
-    logger.info("Seeded default credit settings")
+    logger.info("Seeded default credit coefficients")
