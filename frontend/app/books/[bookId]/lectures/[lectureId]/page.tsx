@@ -51,6 +51,7 @@ export default function LecturePage() {
   const [editField, setEditField] = useState<'text_de' | 'text_zh'>('text_zh');
   const [editValue, setEditValue] = useState('');
   const [editMsg, setEditMsg] = useState<string | null>(null);
+  const [unlinkedImages, setUnlinkedImages] = useState<string[]>([]);
 
   const startPolling = useCallback(() => {
     if (pollingRef.current) clearInterval(pollingRef.current);
@@ -78,6 +79,7 @@ export default function LecturePage() {
 
       // Check publication from lecture response
       setIsPublished(data.is_published === true);
+      setUnlinkedImages(data.unlinked_images || []);
 
       const [paras, cost, perm, contribs] = await Promise.all([
         fetchParagraphs(lectureId),
@@ -360,6 +362,18 @@ ${sentencesHtml}
                 <span key={i} className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">
                   {c.username} ({c.contribution_type === 'first_translation' ? '首次翻译' : c.contribution_type === 'revision' ? '修订' : '下载'})
                 </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Unlinked images — display at top of content */}
+        {unlinkedImages.length > 0 && (
+          <div className="mb-6 p-4 bg-white rounded-xl shadow-sm border border-slate-100">
+            <p className="text-xs text-slate-400 mb-2">讲座图片</p>
+            <div className="flex flex-wrap gap-2">
+              {unlinkedImages.map((url, i) => (
+                <ImageView key={i} url={url} />
               ))}
             </div>
           </div>

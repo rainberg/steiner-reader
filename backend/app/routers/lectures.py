@@ -82,10 +82,14 @@ async def get_lecture_paragraphs(
         {"lid": lecture_id}
     )
     image_map = {}
+    unlinked_images = []
     for row in img_result:
+        ga = row[2] if row[2] else "GA279"
+        url = f"/api/images/{ga}/{row[1]}"
         if row[0]:
-            ga = row[2] if row[2] else "GA279"
-            image_map[row[0]] = f"/api/images/{ga}/{row[1]}"
+            image_map[row[0]] = url
+        else:
+            unlinked_images.append(url)
 
     return [_build_paragraph_response(p, image_map, is_published) for p in paragraphs]
 

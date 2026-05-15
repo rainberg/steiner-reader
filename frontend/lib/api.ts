@@ -66,6 +66,7 @@ export interface Lecture {
   download_lecture_cost?: number;
   edit_translation_cost?: number;
   edit_source_cost?: number;
+  unlinked_images?: string[];
 }
 
 export interface Book {
