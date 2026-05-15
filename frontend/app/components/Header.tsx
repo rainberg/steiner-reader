@@ -54,6 +54,9 @@ export default function Header() {
               <Link href="/upload" className="text-sm text-gray-500 hover:text-indigo-600 transition-colors px-2">
                 上传
               </Link>
+              <Link href="/recharge" className="text-sm text-gray-500 hover:text-indigo-600 transition-colors px-2">
+                充值
+              </Link>
               {user.is_admin ? (
                 <Link href="/admin" className="text-sm text-purple-600 hover:text-purple-800 transition-colors px-2">
                   管理

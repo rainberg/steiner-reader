@@ -8,7 +8,7 @@ from app.config import settings
 from contextlib import asynccontextmanager
 
 from app.routers import books, translate, images, auth, admin, lectures, paragraphs
-from app.routers import downloads, edits, upload
+from app.routers import downloads, edits, upload, recharge
 from app.db.database import async_session, get_db
 from app.db.models import CreditTransaction
 from app.routers.auth import require_user
@@ -50,6 +50,7 @@ app.include_router(paragraphs.router)
 app.include_router(downloads.router)
 app.include_router(edits.router)
 app.include_router(upload.router)
+app.include_router(recharge.router)
 
 
 @app.get("/")

@@ -30,7 +30,7 @@ export default function AdminPage() {
   const [editUsername, setEditUsername] = useState("");
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<"users" | "settings">("users");
+  const [activeTab, setActiveTab] = useState<"users" | "settings" | "recharge">("users");
   const [creditSettings, setCreditSettings] = useState<CreditSetting[]>([]);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [editEmail, setEditEmail] = useState("");
@@ -244,6 +244,14 @@ export default function AdminPage() {
             }`}
           >
             积分设置
+          </button>
+          <button
+            onClick={() => setActiveTab("recharge")}
+            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition ${
+              activeTab === "recharge" ? "bg-white text-blue-600 border border-b-white border-gray-200 -mb-px" : "text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            充值审核
           </button>
         </div>
       </div>
@@ -515,7 +523,7 @@ export default function AdminPage() {
         </div>
       )}
       </>
-      ) : (
+      ) : activeTab === "settings" ? (
       <CreditSettingsTab
         settings={creditSettings}
         loading={settingsLoading}
@@ -524,6 +532,8 @@ export default function AdminPage() {
           await loadCreditSettings();
         }}
       />
+      ) : (
+      <RechargeReviewTab />
       )}
     </div>
   );
@@ -621,6 +631,140 @@ function CreditSettingsTab({
                     >
                       修改
                     </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function RechargeReviewTab() {
+  const [requests, setRequests] = useState<Array<{
+    id: number; user_id: number; username: string; amount: number;
+    payment_image: string | null; status: string; admin_note: string | null;
+    created_at: string; updated_at: string | null;
+  }>>([]);
+  const [loading, setLoading] = useState(true);
+  const [qrUploading, setQrUploading] = useState(false);
+  const [reviewMsg, setReviewMsg] = useState("");
+
+  const loadRequests = () => {
+    const token = localStorage.getItem("steiner_token");
+    fetch("/api/recharge/admin/pending-requests", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.json())
+      .then(setRequests)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { loadRequests(); }, []);
+
+  const handleReview = async (id: number, status: string, note: string) => {
+    const token = localStorage.getItem("steiner_token");
+    const res = await fetch(`/api/recharge/admin/review/${id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ status, admin_note: note }),
+    });
+    const data = await res.json();
+    setReviewMsg(data.message || "");
+    loadRequests();
+  };
+
+  const handleQrUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setQrUploading(true);
+    const token = localStorage.getItem("steiner_token");
+    const formData = new FormData();
+    formData.append("qr_image", file);
+    await fetch("/api/recharge/admin/upload-qr", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+    setQrUploading(false);
+    setReviewMsg("收款码已上传");
+  };
+
+  const statusBadge = (s: string) => {
+    const c = s === "pending" ? "bg-yellow-50 text-yellow-700" :
+              s === "approved" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700";
+    const t = s === "pending" ? "待审核" : s === "approved" ? "已通过" : "已拒绝";
+    return <span className={`px-2 py-0.5 rounded text-xs font-medium ${c}`}>{t}</span>;
+  };
+
+  if (loading) return <div className="text-center py-8 text-gray-400">加载中...</div>;
+
+  return (
+    <div>
+      {reviewMsg && <div className="mb-4 p-2 bg-green-50 text-green-700 rounded text-sm">{reviewMsg}</div>}
+
+      {/* QR Code Upload */}
+      <div className="mb-6 bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+        <h3 className="text-sm font-medium text-gray-800 mb-3">收款码管理</h3>
+        <div className="flex items-center gap-4">
+          <img
+            src="/api/recharge/payment-qr"
+            alt="收款码"
+            className="w-24 h-24 object-contain border rounded"
+            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+          />
+          <label className="cursor-pointer px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700">
+            {qrUploading ? "上传中..." : "上传收款码"}
+            <input type="file" accept="image/*" onChange={handleQrUpload} className="hidden" />
+          </label>
+        </div>
+      </div>
+
+      {/* Recharge Requests */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <table className="w-full">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">用户</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">金额</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">凭证</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">状态</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">时间</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">操作</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {requests.map(r => (
+              <tr key={r.id} className="hover:bg-gray-50">
+                <td className="px-4 py-3 text-sm">{r.username}</td>
+                <td className="px-4 py-3 text-sm font-medium">{r.amount} 点</td>
+                <td className="px-4 py-3">
+                  {r.payment_image ? (
+                    <a href={`/api/recharge/payment-proof/${r.payment_image}`} target="_blank"
+                       className="text-blue-600 text-xs hover:underline">
+                      查看凭证
+                    </a>
+                  ) : <span className="text-gray-300 text-xs">-</span>}
+                </td>
+                <td className="px-4 py-3">{statusBadge(r.status)}</td>
+                <td className="px-4 py-3 text-xs text-gray-400">{new Date(r.created_at).toLocaleDateString("zh-CN")}</td>
+                <td className="px-4 py-3">
+                  {r.status === "pending" ? (
+                    <div className="flex gap-2">
+                      <button onClick={() => handleReview(r.id, "approved", "")}
+                              className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700">
+                        批准
+                      </button>
+                      <button onClick={() => handleReview(r.id, "rejected", "")}
+                              className="px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700">
+                        拒绝
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-gray-400">{r.admin_note || "-"}</span>
                   )}
                 </td>
               </tr>

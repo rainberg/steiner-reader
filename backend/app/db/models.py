@@ -123,6 +123,7 @@ class User(Base):
     access_grants = relationship("LectureAccess", back_populates="user", cascade="all, delete-orphan")
     edit_audits = relationship("EditAuditLog", back_populates="user", cascade="all, delete-orphan")
     credit_transactions = relationship("CreditTransaction", back_populates="user", cascade="all, delete-orphan")
+    recharge_requests = relationship("RechargeRequest", back_populates="user", cascade="all, delete-orphan")
 
 
 class CreditSetting(Base):
@@ -188,3 +189,18 @@ class EditAuditLog(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="edit_audits", foreign_keys=[user_id])
+
+
+class RechargeRequest(Base):
+    __tablename__ = "recharge_requests"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    amount = Column(Integer, nullable=False)
+    payment_image = Column(String(255))  # path to uploaded payment proof
+    status = Column(String(20), default="pending")  # pending, approved, rejected
+    admin_note = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User", back_populates="recharge_requests", foreign_keys=[user_id])
