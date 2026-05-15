@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { adminAddCredits, adminUpdateUser, adminResetPassword, fetchCreditSettings, updateCreditSetting, CreditSetting } from "@/lib/api";
 
@@ -30,7 +30,7 @@ export default function AdminPage() {
   const [editUsername, setEditUsername] = useState("");
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<"users" | "settings" | "recharge">("users");
+  const [activeTab, setActiveTab] = useState<"users" | "settings" | "recharge" | "upload">("users");
   const [creditSettings, setCreditSettings] = useState<CreditSetting[]>([]);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [editEmail, setEditEmail] = useState("");
@@ -252,6 +252,14 @@ export default function AdminPage() {
             }`}
           >
             充值审核
+          </button>
+          <button
+            onClick={() => setActiveTab("upload")}
+            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition ${
+              activeTab === "upload" ? "bg-white text-blue-600 border border-b-white border-gray-200 -mb-px" : "text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            上传书籍
           </button>
         </div>
       </div>
@@ -532,8 +540,10 @@ export default function AdminPage() {
           await loadCreditSettings();
         }}
       />
-      ) : (
+      ) : activeTab === "recharge" ? (
       <RechargeReviewTab />
+      ) : (
+      <UploadTab />
       )}
     </div>
   );
@@ -771,6 +781,84 @@ function RechargeReviewTab() {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+function UploadTab() {
+  const [files, setFiles] = useState<File[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [result, setResult] = useState<{ success: boolean; message: string; gaNumber?: string; chapters?: number } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const dropped = Array.from(e.dataTransfer.files).filter(f => /\.(epub|docx|pdf)$/i.test(f.name));
+    if (dropped.length) setFiles(prev => [...prev, ...dropped]);
+  };
+
+  const handleUpload = async () => {
+    if (!files.length) return;
+    setUploading(true);
+    setResult(null);
+    const token = localStorage.getItem("steiner_token");
+    try {
+      const formData = new FormData();
+      files.forEach(f => formData.append("files", f));
+      const res = await fetch("/api/books/upload", {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setResult({ success: true, message: data.message, gaNumber: data.ga_number, chapters: data.chapters });
+        setFiles([]);
+      } else {
+        setResult({ success: false, message: data.detail || "上传失败" });
+      }
+    } catch {
+      setResult({ success: false, message: "网络错误" });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div>
+      <p className="text-gray-500 text-sm mb-4">上传 EPUB、DOCX 或 PDF，自动解析章节段落结构。</p>
+      <div
+        onDragOver={e => e.preventDefault()}
+        onDrop={handleDrop}
+        onClick={() => fileInputRef.current?.click()}
+        className="border-2 border-dashed border-gray-200 rounded-xl p-12 text-center hover:border-indigo-300 hover:bg-indigo-50/20 transition-all cursor-pointer mb-6"
+      >
+        <p className="text-sm text-gray-500">拖拽文件或 <span className="text-indigo-500 font-medium">点击选择</span></p>
+        <p className="text-xs text-gray-400 mt-1">EPUB · DOCX · PDF</p>
+        <input ref={fileInputRef} type="file" accept=".epub,.docx,.pdf" multiple onChange={e => { if (e.target.files) setFiles(prev => [...prev, ...Array.from(e.target.files!)]); }} className="hidden" />
+      </div>
+      {files.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-6">
+          <h3 className="text-sm font-medium text-gray-700 mb-3">已选择 {files.length} 个文件</h3>
+          {files.map((f, i) => (
+            <div key={i} className="flex items-center justify-between py-2 border-b border-gray-50">
+              <span className="text-sm text-gray-700 truncate">{f.name}</span>
+              <span className="text-xs text-gray-400">{(f.size / 1024).toFixed(0)} KB</span>
+              <button onClick={() => setFiles(prev => prev.filter((_, j) => j !== i))} className="text-xs text-red-400 hover:text-red-600 ml-2">移除</button>
+            </div>
+          ))}
+          <button onClick={handleUpload} disabled={uploading} className="btn-primary mt-4 w-full">
+            {uploading ? "上传解析中..." : `上传 ${files.length} 个文件`}
+          </button>
+        </div>
+      )}
+      {result && (
+        <div className={`rounded-xl p-5 ${result.success ? "bg-green-50 border border-green-100" : "bg-red-50 border border-red-100"}`}>
+          <p className={`text-sm font-medium ${result.success ? "text-green-700" : "text-red-700"}`}>{result.success ? "上传成功" : "上传失败"}</p>
+          <p className="text-sm text-gray-500 mt-1">{result.message}</p>
+          {result.gaNumber && <p className="text-xs text-gray-400 mt-0.5">{result.gaNumber} · {result.chapters} 章节</p>}
+        </div>
+      )}
     </div>
   );
 }

@@ -51,16 +51,18 @@ export default function Header() {
         <div className="flex items-center gap-3">
           {user ? (
             <>
-              <Link href="/upload" className="text-sm text-gray-500 hover:text-indigo-600 transition-colors px-2">
-                上传
-              </Link>
               <Link href="/recharge" className="text-sm text-gray-500 hover:text-indigo-600 transition-colors px-2">
                 充值
               </Link>
               {user.is_admin ? (
+                <>
+                <Link href="/upload" className="text-sm text-gray-500 hover:text-indigo-600 transition-colors px-2">
+                  上传
+                </Link>
                 <Link href="/admin" className="text-sm text-purple-600 hover:text-purple-800 transition-colors px-2">
                   管理
                 </Link>
+                </>
               ) : null}
               <div className="flex items-center gap-2 pl-2 border-l border-gray-200">
                 <Link href="/profile" className="text-sm text-gray-600 font-medium hover:text-indigo-600 transition-colors">
