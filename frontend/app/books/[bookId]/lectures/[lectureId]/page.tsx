@@ -6,6 +6,7 @@ import Link from 'next/link';
 import {
   fetchLecture,
   fetchParagraphs,
+  fetchLectureImages,
   getTranslationCost,
   getTranslationStatus,
   translateLecture,
@@ -79,16 +80,17 @@ export default function LecturePage() {
 
       // Check publication from lecture response
       setIsPublished(data.is_published === true);
-      setUnlinkedImages(data.unlinked_images || []);
 
-      const [paras, cost, perm, contribs] = await Promise.all([
+      const [paras, cost, perm, contribs, images] = await Promise.all([
         fetchParagraphs(lectureId),
         getTranslationCost(lectureId).catch(() => null),
         getDownloadPermission(lectureId).catch(() => null),
         fetchContributions(lectureId).catch(() => []),
+        fetchLectureImages(lectureId).catch(() => []),
       ]);
       setParagraphs(paras);
       setContributions(contribs);
+      setUnlinkedImages((images || []).map((img: {url: string}) => img.url));
 
       if (cost) {
         setCostInfo(cost);
