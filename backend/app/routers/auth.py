@@ -222,13 +222,21 @@ async def change_username(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """修改当前用户名"""
+    """修改当前用户名（每3个月可改一次）"""
+    from datetime import timedelta
     if not pwd_context.verify(req.password, user.password_hash):
         raise HTTPException(400, "密码错误")
     if len(req.username) < 2 or len(req.username) > 50:
         raise HTTPException(400, "用户名需要2-50个字符")
     if req.username == user.username:
         raise HTTPException(400, "新用户名不能与当前用户名相同")
+
+    # 3-month restriction
+    if user.username_changed_at:
+        next_allowed = user.username_changed_at + timedelta(days=90)
+        if datetime.utcnow() < next_allowed:
+            days_left = (next_allowed - datetime.utcnow()).days
+            raise HTTPException(400, f"每90天只能修改一次用户名，还需等待 {days_left} 天")
 
     # Check if username is already taken by another user
     existing = await db.execute(
@@ -238,6 +246,7 @@ async def change_username(
         raise HTTPException(400, "该用户名已被其他用户使用")
 
     user.username = req.username
+    user.username_changed_at = datetime.utcnow()
     await db.commit()
     await db.refresh(user)
 

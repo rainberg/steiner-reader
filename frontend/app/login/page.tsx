@@ -11,6 +11,7 @@ export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -23,6 +24,11 @@ export default function LoginPage() {
       if (isLogin) {
         await login(email, password);
       } else {
+        if (password !== confirmPassword) {
+          setError('两次输入的密码不一致');
+          setLoading(false);
+          return;
+        }
         await register(username, email, password);
       }
       window.dispatchEvent(new Event('auth-changed'));
@@ -126,6 +132,20 @@ export default function LoginPage() {
                 className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-all"
               />
             </div>
+
+            {!isLogin && (
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">确认密码</label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={e => setConfirmPassword(e.target.value)}
+                placeholder="再次输入密码"
+                required
+                className="w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-all"
+              />
+            </div>
+            )}
 
             <button type="submit" disabled={loading} className="btn-primary w-full">
               {loading ? '处理中...' : isLogin ? '登录' : '注册'}

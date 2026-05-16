@@ -117,6 +117,7 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     credits = Column(Integer, default=100)
     is_admin = Column(Integer, default=0)  # 0=normal, 1=admin
+    username_changed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     contributions = relationship("Contribution", back_populates="user", cascade="all, delete-orphan")
