@@ -5,10 +5,12 @@ import { Suspense } from 'react';
 import GroupedBooksView from '@/app/components/GroupedBooksView';
 import PaginatedBooksView from '@/app/components/PaginatedBooksView';
 import SearchBooksView from '@/app/components/SearchBooksView';
+import WaterfallBooksView from '@/app/components/WaterfallBooksView';
 
-type ViewMode = 'group' | 'grid' | 'search';
+type ViewMode = 'waterfall' | 'group' | 'grid' | 'search';
 
 const tabs: { key: ViewMode; label: string }[] = [
+  { key: 'waterfall', label: '流式' },
   { key: 'group', label: '分类' },
   { key: 'grid', label: '网格' },
   { key: 'search', label: '搜索' },
@@ -17,10 +19,10 @@ const tabs: { key: ViewMode; label: string }[] = [
 function HomeContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const view = (searchParams.get('view') as ViewMode) || 'group';
+  const view = (searchParams.get('view') as ViewMode) || 'waterfall';
 
   const switchView = (v: ViewMode) => {
-    if (v === 'group') router.push('/');
+    if (v === 'waterfall') router.push('/');
     else router.push(`/?view=${v}`);
   };
 
@@ -46,6 +48,7 @@ function HomeContent() {
         ))}
       </div>
 
+      {view === 'waterfall' && <WaterfallBooksView />}
       {view === 'group' && <GroupedBooksView />}
       {view === 'grid' && <PaginatedBooksView />}
       {view === 'search' && <SearchBooksView />}
