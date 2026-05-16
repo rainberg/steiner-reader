@@ -57,8 +57,10 @@ async def translate_lecture(
         raise HTTPException(status_code=404, detail="章节不存在")
 
     # If is_translating=true but not in _running_tasks, the previous task died
-    # (server restart or crash). Reset the flag so user can retry.
+    # (server restart or crash). Reset the flag, skip credit charge since user already paid.
+    was_stuck = False
     if lecture.is_translating and lecture_id not in _running_tasks:
+        was_stuck = True
         lecture.is_translating = False
         lecture.translate_progress = 0
         lecture.translate_total = 0
@@ -88,20 +90,24 @@ async def translate_lecture(
     remaining = total - translated
     cost = await compute_price(db, "translate_lecture", remaining if remaining > 0 else total)
 
-    # Atomic deduction
-    try:
-        new_credits = await atomic_deduct_credits(
-            db, user, cost,
-            transaction_type="translate_lecture",
-            reference_type="lecture",
-            reference_id=lecture_id,
-            description=f"翻译讲座 {lecture.title_de or lecture_id}",
-        )
-    except ValueError:
-        raise HTTPException(
-            status_code=402,
-            detail=f"点数不足：翻译需要 {cost} 点，当前余额 {user.credits} 点"
-        )
+    # Credit deduction (skip if recovering from stuck state — user already paid)
+    if was_stuck:
+        new_credits = user.credits
+        cost = 0
+    else:
+        try:
+            new_credits = await atomic_deduct_credits(
+                db, user, cost,
+                transaction_type="translate_lecture",
+                reference_type="lecture",
+                reference_id=lecture_id,
+                description=f"翻译讲座 {lecture.title_de or lecture_id}",
+            )
+        except ValueError:
+            raise HTTPException(
+                status_code=402,
+                detail=f"点数不足：翻译需要 {cost} 点，当前余额 {user.credits} 点"
+            )
 
     await db.commit()
 
