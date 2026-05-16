@@ -2,6 +2,8 @@
 
 import logging
 from fastapi import APIRouter, Depends, HTTPException
+import hashlib
+import re
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -63,6 +65,12 @@ async def submit_revision(
             detail=f"点数不足，需要 {cost} 点"
         )
 
+    # Compute hash and anchor from original text for persistence
+    original_text = getattr(sentence, req.field) or ""
+    normalized = re.sub(r'\s+', ' ', original_text).strip()
+    text_hash = hashlib.sha256(normalized.encode()).hexdigest()
+    anchor = (normalized[:60] + "|" + normalized[-60:])[:200]
+
     # Create revision (not direct update of sentence)
     rev = SentenceRevision(
         sentence_id=sentence_id,
@@ -71,6 +79,8 @@ async def submit_revision(
         user_id=user.id,
         status="active",
         vote_count=1,
+        text_hash=text_hash,
+        text_anchor=anchor,
     )
     db.add(rev)
     await db.flush()

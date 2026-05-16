@@ -202,6 +202,8 @@ class SentenceRevision(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     status = Column(String(20), default="active")  # active, rejected
     vote_count = Column(Integer, default=0)
+    text_hash = Column(String(64))  # SHA256 of normalized original text
+    text_anchor = Column(String(200))  # first 60 + last 60 chars for fuzzy matching
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 

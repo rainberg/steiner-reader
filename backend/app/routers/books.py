@@ -1,5 +1,6 @@
 """Books API router."""
 
+import re
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -334,31 +335,46 @@ async def get_lecture(
 
     is_published = lecture.is_published or False
 
-    # Fetch winning revisions for all sentences in this lecture
-    # (highest vote_count per sentence_id, ties broken by most recent)
-    rev_query = sa_text("""
-        SELECT DISTINCT ON (r.sentence_id) r.sentence_id, r.field, r.new_value
+    # Fetch winning revisions: hash match first, then anchor fallback
+    import hashlib
+    win_map = {}
+
+    # Build hash+anchor for each sentence
+    sent_hashes = {}
+    for para in lecture.paragraphs:
+        for sent in para.sentences:
+            n = re.sub(r'\s+', ' ', (sent.text_de or '')).strip()
+            sent_hashes[sent.id] = (hashlib.sha256(n.encode()).hexdigest(), (n[:60] + "|" + n[-60:])[:200])
+
+    # Get all active revisions for this lecture
+    all_rev_result = await db.execute(sa_text("""
+        SELECT r.sentence_id, r.field, r.new_value, r.text_hash, r.text_anchor,
+               r.vote_count, r.created_at
         FROM sentence_revisions r
         WHERE r.sentence_id IN (
             SELECT s.id FROM sentences s JOIN paragraphs p ON s.paragraph_id = p.id WHERE p.lecture_id = :lid
         )
         AND r.status = 'active'
-        ORDER BY r.sentence_id, r.vote_count DESC, r.created_at DESC
-    """)
-    rev_result = await db.execute(rev_query, {"lid": lecture_id})
-    winning_revisions = {}
-    for row in rev_result:
-        winning_revisions.setdefault(row[0], {})[row[1]] = row[2]
+        ORDER BY r.vote_count DESC, r.created_at DESC
+    """), {"lid": lecture_id})
+    all_revs = all_rev_result.fetchall()
 
-    # Apply winning revisions to sentence text
+    # Match: for each sentence, pick the best revision by hash or anchor
+    for sid, (href, ha) in sent_hashes.items():
+        for row in all_revs:
+            rsid, field, val, rhash, ranch, _, _ = row
+            if sid != rsid: continue
+            if rhash == href or (ranch and ranch[:30] in ha):
+                if sid not in win_map: win_map[sid] = {}
+                if field not in win_map[sid]: win_map[sid][field] = val
+
+    # Apply winning revisions
     for para in lecture.paragraphs:
         for sent in para.sentences:
-            if sent.id in winning_revisions:
-                revs = winning_revisions[sent.id]
+            if sent.id in win_map:
+                revs = win_map[sent.id]
                 if "text_de" in revs:
                     sent.text_de = revs["text_de"]
-                    # Original text changed — invalidate old translation unless
-                    # a matching text_zh revision also won
                     if "text_zh" not in revs:
                         sent.text_zh = None
                 if "text_zh" in revs:
