@@ -330,8 +330,35 @@ async def get_lecture(
         get_contributions, check_download_access, get_access_types, compute_price,
     )
     from sqlalchemy import text as sa_text
+    from app.db.models import SentenceRevision
 
     is_published = lecture.is_published or False
+
+    # Fetch winning revisions for all sentences in this lecture
+    # (highest vote_count per sentence_id, ties broken by most recent)
+    rev_query = sa_text("""
+        SELECT DISTINCT ON (r.sentence_id) r.sentence_id, r.field, r.new_value
+        FROM sentence_revisions r
+        WHERE r.sentence_id IN (
+            SELECT s.id FROM sentences s JOIN paragraphs p ON s.paragraph_id = p.id WHERE p.lecture_id = :lid
+        )
+        AND r.status = 'active'
+        ORDER BY r.sentence_id, r.vote_count DESC, r.created_at DESC
+    """)
+    rev_result = await db.execute(rev_query, {"lid": lecture_id})
+    winning_revisions = {}
+    for row in rev_result:
+        winning_revisions.setdefault(row[0], {})[row[1]] = row[2]
+
+    # Apply winning revisions to sentence text
+    for para in lecture.paragraphs:
+        for sent in para.sentences:
+            if sent.id in winning_revisions:
+                revs = winning_revisions[sent.id]
+                if "text_de" in revs:
+                    sent.text_de = revs["text_de"]
+                if "text_zh" in revs:
+                    sent.text_zh = revs["text_zh"]
 
     # 查询该讲座的图片 -> sentence_id 映射（动态获取 GA 号）
     img_result = await db.execute(

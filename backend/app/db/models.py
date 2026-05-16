@@ -192,6 +192,28 @@ class EditAuditLog(Base):
     user = relationship("User", back_populates="edit_audits", foreign_keys=[user_id])
 
 
+class SentenceRevision(Base):
+    __tablename__ = "sentence_revisions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    sentence_id = Column(Integer, ForeignKey("sentences.id", ondelete="CASCADE"), nullable=False, index=True)
+    field = Column(String(10), nullable=False)  # "text_de" or "text_zh"
+    new_value = Column(Text, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    status = Column(String(20), default="active")  # active, rejected
+    vote_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class RevisionVote(Base):
+    __tablename__ = "revision_votes"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    revision_id = Column(Integer, ForeignKey("sentence_revisions.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class TranslationFix(Base):
     __tablename__ = "translation_fixes"
 
