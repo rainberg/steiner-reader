@@ -576,6 +576,7 @@ function CreditSettingsTab({
     edit_source_coefficient: "编辑原文系数 (每句×系数)",
     download_lecture_price: "单章下载 (0=免费)",
     download_book_price: "全书下载 (0=免费)",
+    recharge_coefficient: "充值兑换系数 (1元=积分)",
   };
 
   const handleSave = async (key: string) => {
@@ -654,6 +655,7 @@ function CreditSettingsTab({
 function RechargeReviewTab() {
   const [requests, setRequests] = useState<Array<{
     id: number; user_id: number; username: string; amount: number;
+    coefficient: number; credits: number;
     payment_image: string | null; status: string; admin_note: string | null;
     created_at: string; updated_at: string | null;
   }>>([]);
@@ -738,7 +740,9 @@ function RechargeReviewTab() {
           <thead className="bg-gray-50">
             <tr>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">用户</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">金额</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">金额 (元)</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">兑换</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">积分</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">凭证</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">状态</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">时间</th>
@@ -749,7 +753,9 @@ function RechargeReviewTab() {
             {requests.map(r => (
               <tr key={r.id} className="hover:bg-gray-50">
                 <td className="px-4 py-3 text-sm">{r.username}</td>
-                <td className="px-4 py-3 text-sm font-medium">{r.amount} 点</td>
+                <td className="px-4 py-3 text-sm">{r.amount} 元</td>
+                <td className="px-4 py-3 text-sm text-gray-500">×{r.coefficient || 10}</td>
+                <td className="px-4 py-3 text-sm font-medium">{r.credits || r.amount * (r.coefficient || 10)} 积分</td>
                 <td className="px-4 py-3">
                   {r.payment_image ? (
                     <a href={`/api/recharge/payment-proof/${r.payment_image}`} target="_blank"

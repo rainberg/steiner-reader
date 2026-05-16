@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
-from app.db.models import User, RechargeRequest, CreditTransaction
+from app.db.models import User, RechargeRequest, CreditTransaction, CreditSetting
 from app.routers.auth import require_user, require_admin
 from app.config import settings
 
@@ -58,6 +58,25 @@ class RechargeReviewRequest(BaseModel):
 
 # ── User Endpoints ─────────────────────────────────────────────
 
+@router.get("/info")
+async def recharge_info(db: AsyncSession = Depends(get_db)):
+    """Get recharge coefficient and conversion info."""
+    result = await db.execute(
+        select(CreditSetting).where(CreditSetting.key == "recharge_coefficient")
+    )
+    row = result.scalar_one_or_none()
+    coefficient = row.value if row else 10
+    return {
+        "coefficient": coefficient,
+        "description": f"1元 = {coefficient}积分",
+        "examples": [
+            {"yuan": 1, "credits": 1 * coefficient},
+            {"yuan": 10, "credits": 10 * coefficient},
+            {"yuan": 50, "credits": 50 * coefficient},
+        ],
+    }
+
+
 @router.post("/submit")
 async def submit_recharge(
     amount: int = Form(...),
@@ -65,12 +84,19 @@ async def submit_recharge(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Submit a recharge application with payment proof."""
+    """Submit a recharge application. amount is in RMB yuan. Credits = amount × coefficient."""
     if amount <= 0:
-        raise HTTPException(status_code=400, detail="充值金额必须大于0")
+        raise HTTPException(status_code=400, detail="充值金额必须大于0元")
 
     if not payment_image.content_type or not payment_image.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="请上传图片文件")
+
+    # Get current coefficient
+    coeff_result = await db.execute(
+        select(CreditSetting).where(CreditSetting.key == "recharge_coefficient")
+    )
+    coeff_row = coeff_result.scalar_one_or_none()
+    coefficient = coeff_row.value if coeff_row else 10
 
     # Save payment proof
     ext = os.path.splitext(payment_image.filename or "proof.png")[1] or ".png"
@@ -81,10 +107,11 @@ async def submit_recharge(
     with open(filepath, "wb") as f:
         f.write(content)
 
-    # Create request
+    # Create request with coefficient snapshot
     req = RechargeRequest(
         user_id=user.id,
         amount=amount,
+        coefficient=coefficient,
         payment_image=filename,
         status="pending",
     )
@@ -92,11 +119,14 @@ async def submit_recharge(
     await db.commit()
     await db.refresh(req)
 
+    credits = amount * coefficient
     return {
         "success": True,
-        "message": "充值申请已提交，请等待管理员审核",
+        "message": f"充值申请已提交，审核通过后将获得 {credits} 积分",
         "id": req.id,
         "amount": req.amount,
+        "coefficient": coefficient,
+        "credits": credits,
         "status": req.status,
     }
 
@@ -163,6 +193,8 @@ async def admin_pending_requests(
             "user_id": r.user_id,
             "username": username,
             "amount": r.amount,
+            "coefficient": r.coefficient,
+            "credits": r.amount * (r.coefficient or 10),
             "payment_image": r.payment_image,
             "status": r.status,
             "admin_note": r.admin_note,
@@ -201,26 +233,30 @@ async def admin_review_request(
     req.admin_note = review.admin_note
 
     if review.status == "approved":
+        credits = req.amount * (req.coefficient or 10)
         old_credits = user.credits
-        user.credits += req.amount
+        user.credits += credits
 
         # Log transaction
         db.add(CreditTransaction(
             user_id=user.id,
-            amount=req.amount,
+            amount=credits,
             balance_after=user.credits,
             transaction_type="recharge_approved",
             reference_type="recharge_request",
             reference_id=req.id,
-            description=f"充值申请 #{req.id} 审核通过，充值 {req.amount} 点",
+            description=f"充值申请 #{req.id} 审核通过，{req.amount}元×{req.coefficient or 10}={credits}积分",
         ))
 
         await db.commit()
         return {
             "success": True,
-            "message": f"已批准，用户 {user.username} 获得 {req.amount} 点 (余额 {user.credits})",
+            "message": f"已批准，用户 {user.username} 充值 {req.amount} 元获得 {credits} 积分 (余额 {user.credits})",
             "old_credits": old_credits,
             "new_credits": user.credits,
+            "amount_yuan": req.amount,
+            "coefficient": req.coefficient,
+            "credits_added": credits,
         }
     else:
         await db.commit()

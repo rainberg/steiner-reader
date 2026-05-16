@@ -13,6 +13,7 @@ export default function RechargePage() {
   const [amount, setAmount] = useState("");
   const [image, setImage] = useState<File | null>(null);
   const [preview, setPreview] = useState("");
+  const [coefficient, setCoefficient] = useState(10);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
@@ -26,6 +27,10 @@ export default function RechargePage() {
     if (!u) { router.push("/login"); return; }
     setUser(u);
     loadHistory();
+    fetch(`${API_BASE}/api/recharge/info`)
+      .then(r => r.json())
+      .then(d => setCoefficient(d.coefficient || 10))
+      .catch(() => {});
   }, [router]);
 
   const loadHistory = async () => {
@@ -50,7 +55,7 @@ export default function RechargePage() {
     setError("");
     setMsg("");
     const amt = parseInt(amount, 10);
-    if (!amt || amt <= 0) { setError("请输入有效金额"); return; }
+    if (!amt || amt < 1) { setError("最低充值金额为 1 元"); return; }
     if (!image) { setError("请上传付款凭证"); return; }
 
     setLoading(true);
@@ -113,15 +118,21 @@ export default function RechargePage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">充值金额</label>
+            <label className="block text-sm font-medium text-gray-600 mb-1">充值金额 (元)</label>
             <input
               type="number"
               value={amount}
               onChange={e => setAmount(e.target.value)}
-              placeholder="输入充值金额"
+              placeholder="最低 1 元"
+              min={1}
               required
               className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm"
             />
+            {amount && parseInt(amount) >= 1 && (
+              <p className="text-xs text-gray-500 mt-1">
+                1元 = {coefficient}积分 · 预计获得 {parseInt(amount) * coefficient} 积分
+              </p>
+            )}
           </div>
 
           <div>
