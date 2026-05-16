@@ -22,6 +22,7 @@ class SearchResult(BaseModel):
     content_de: str = ""
     content_zh: str = ""
     book: str = ""
+    ga_number: str = ""
     score: float = 0.0
 
 
@@ -29,7 +30,7 @@ class SearchResult(BaseModel):
 async def search_steiner(q: str = Query(..., min_length=1), k: int = Query(5, ge=1, le=20)):
     """Semantic search over Rudolf Steiner's complete works via Qdrant."""
     try:
-        # Step 1: Get embedding from OpenAI
+        # Step 1: Get embedding
         async with httpx.AsyncClient(timeout=30) as client:
             emb_resp = await client.post(
                 f"{OPENAI_BASE}/v1/embeddings",
@@ -37,7 +38,7 @@ async def search_steiner(q: str = Query(..., min_length=1), k: int = Query(5, ge
                 headers={"Authorization": f"Bearer {OPENAI_KEY}"},
             )
             if emb_resp.status_code != 200:
-                return {"query": q, "results": [], "count": 0, "error": f"Embedding failed: {emb_resp.status_code}"}
+                return {"query": q, "results": [], "count": 0}
             vector = emb_resp.json()["data"][0]["embedding"]
 
         # Step 2: Search Qdrant
@@ -47,19 +48,48 @@ async def search_steiner(q: str = Query(..., min_length=1), k: int = Query(5, ge
                 json={"vector": vector, "limit": k, "with_payload": True},
                 headers={"api-key": QDRANT_API_KEY},
             )
-            if search_resp.status_code != 200:
-                return {"query": q, "results": [], "count": 0, "error": f"Qdrant failed: {search_resp.status_code}"}
+            results = search_resp.json().get("result", []) if search_resp.status_code == 200 else []
 
-            results = search_resp.json().get("result", [])
+        # Step 3: Map PDF filenames to book info
+        pdf_map = {}
+        pdf_names = set()
+        for r in results:
+            p = r.get("payload", {})
+            meta = p.get("metadata", {}) if isinstance(p.get("metadata"), dict) else {}
+            src = meta.get("source", "")
+            if src:
+                pdf_names.add(src)
+
+        if pdf_names:
+            try:
+                from app.db.database import async_session
+                from sqlalchemy import text
+                async with async_session() as db:
+                    for pdf_name in pdf_names:
+                        pn = pdf_name.replace(".pdf", "")
+                        result = await db.execute(
+                            text("SELECT ga_number, title_de, title_zh FROM books WHERE REPLACE(pdf_filename, '.pdf', '') LIKE '%' || :pn || '%' OR REPLACE(pdf_filename, '.epub', '') LIKE '%' || :pn || '%' OR REPLACE(pdf_filename, '.bdn', '') LIKE '%' || :pn || '%' LIMIT 1"),
+                            {"pn": pn}
+                        )
+                        row = result.first()
+                        if row:
+                            pdf_map[pdf_name] = {"ga": row[0], "de": row[1], "zh": row[2]}
+            except Exception as e:
+                logger.warning(f"Book lookup: {e}")
 
         items = []
         for r in results:
             p = r.get("payload", {})
             meta = p.get("metadata", {}) if isinstance(p.get("metadata"), dict) else {}
+            src = meta.get("source", "")
+            info = pdf_map.get(src, {})
+            ga = info.get("ga", "")
+            label = f"{ga}: {info.get('zh') or info.get('de') or ''}" if ga else src
             items.append(SearchResult(
                 content_de=p.get("page_content", ""),
                 content_zh=p.get("zh_content", ""),
-                book=meta.get("source", ""),
+                book=label,
+                ga_number=ga,
                 score=r.get("score", 0),
             ))
 

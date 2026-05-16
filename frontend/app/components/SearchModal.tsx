@@ -39,7 +39,7 @@ export default function SearchModal() {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="p-4 border-b flex gap-2">
               <input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && doSearch()}
-                placeholder="搜索施泰纳著作（语义搜索）..." autoFocus
+                placeholder="搜索施泰纳著作..." autoFocus
                 className="flex-1 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
               <button onClick={doSearch} disabled={loading} className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-50">
                 {loading ? '搜索中...' : '搜索'}
@@ -49,12 +49,9 @@ export default function SearchModal() {
             <div className="overflow-y-auto p-4 space-y-3">
               {results.map((r, i) => (
                 <div key={i} className="p-4 bg-slate-50 rounded-xl">
-                  <p className="text-sm text-gray-700 leading-relaxed mb-2">{r.content_de}</p>
-                  {r.content_zh && <p className="text-sm text-gray-500 leading-relaxed">{r.content_zh}</p>}
-                  <div className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-200">
-                    <span className="text-xs text-gray-400">{r.book}</span>
-                    <span className="text-xs text-gray-300">{r.score.toFixed(2)}</span>
-                  </div>
+                  {r.content_zh && <p className="text-base text-gray-800 leading-relaxed mb-2">{r.content_zh}</p>}
+                  <p className="text-sm text-gray-500 leading-relaxed">{r.content_de}</p>
+                  {r.book && <p className="text-xs text-gray-400 mt-2 pt-2 border-t border-slate-200">{r.book}</p>}
                 </div>
               ))}
               {!loading && results.length === 0 && query && (
