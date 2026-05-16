@@ -197,7 +197,8 @@ class RechargeRequest(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     amount = Column(Integer, nullable=False)
-    payment_image = Column(String(255))  # path to uploaded payment proof
+    coefficient = Column(Integer, default=10)
+    payment_image = Column(String(255))
     status = Column(String(20), default="pending")  # pending, approved, rejected
     admin_note = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
