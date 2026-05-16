@@ -167,6 +167,8 @@ async def my_recharge_requests(
         {
             "id": r.id,
             "amount": r.amount,
+            "coefficient": r.coefficient or 10,
+            "credits": r.amount * (r.coefficient or 10),
             "status": r.status,
             "admin_note": r.admin_note,
             "created_at": r.created_at,

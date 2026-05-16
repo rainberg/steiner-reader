@@ -18,7 +18,8 @@ export default function RechargePage() {
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
   const [history, setHistory] = useState<Array<{
-    id: number; amount: number; status: string; admin_note: string | null;
+    id: number; amount: number; coefficient: number; credits: number;
+    status: string; admin_note: string | null;
     created_at: string; updated_at: string | null;
   }>>([]);
 
@@ -159,15 +160,16 @@ export default function RechargePage() {
 
       {/* History */}
       <div className="card p-6">
-        <h2 className="text-sm font-medium text-gray-700 mb-4">申请记录</h2>
+        <h2 className="text-sm font-medium text-gray-700 mb-4">充值申请</h2>
         {history.length === 0 ? (
-          <p className="text-sm text-gray-400">暂无申请记录</p>
+          <p className="text-sm text-gray-400">暂无充值申请</p>
         ) : (
           <div className="space-y-2">
             {history.map(r => (
               <div key={r.id} className="flex items-center justify-between py-2 border-b border-gray-100 text-sm">
                 <div>
-                  <span className="text-gray-700">{r.amount} 点</span>
+                  <span className="text-gray-700">{r.amount} 元</span>
+                  <span className="text-gray-400 text-xs ml-1">= {r.credits || r.amount * (r.coefficient||10)} 积分</span>
                   <span className={`ml-2 px-1.5 py-0.5 rounded text-xs ${
                     r.status === "pending" ? "bg-yellow-50 text-yellow-700" :
                     r.status === "approved" ? "bg-green-50 text-green-700" :
