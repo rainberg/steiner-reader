@@ -402,6 +402,10 @@ ${contributions.length > 0 ? '<div class="contributors" style="margin-top:2em;pa
                     onEditCancel={() => { setEditingSentenceId(null); setEditMsg(null); }}
                     onEditSave={handleEditSentence}
                     onEditValueChange={setEditValue}
+                    revisions={revisionsMap[sent.id] || []}
+                    onLoadRevisions={(sid: number) => {
+                      fetchSentenceRevisions(sid).then(revs => setRevisionsMap(m => ({...m, [sid]: revs})));
+                    }}
                   />
                 ))}
               </div>
@@ -490,6 +494,8 @@ function SentenceView({
   onEditCancel,
   onEditSave,
   onEditValueChange,
+  revisions,
+  onLoadRevisions,
 }: {
   sentence: Sentence;
   mode: ReadingMode;
@@ -509,6 +515,8 @@ function SentenceView({
   onEditCancel: () => void;
   onEditSave: (sid: number) => void;
   onEditValueChange: (val: string) => void;
+  revisions: RevisionItem[];
+  onLoadRevisions: (sid: number) => void;
 }) {
   const de = sentence.content_de || sentence.text_de || '';
   const zh = sentence.content_zh || sentence.text_zh || '';
@@ -517,6 +525,7 @@ function SentenceView({
   const isZhVisible = mode === 'de-zh' || mode === 'zh-only' || showZh || localShow;
   const isEditing = editingSentenceId === sentence.id;
   const editCost = editField === 'text_zh' ? editTransCost : editSourceCost;
+  const [showRevs, setShowRevs] = useState(false);
 
   if (isEditing) {
     return (
@@ -618,6 +627,24 @@ function SentenceView({
             >
               ✎ 中
             </button>
+          )}
+        </div>
+      )}
+      {canEdit && revisions.length > 0 && (
+        <div className="mt-1 ml-[3rem]">
+          <button onClick={() => { setShowRevs(!showRevs); if (!showRevs) onLoadRevisions(sentence.id); }} className="text-[10px] text-amber-500 hover:text-amber-700">
+            {showRevs ? '收起' : `修订(${revisions.length})`}
+          </button>
+          {showRevs && (
+            <div className="mt-1 space-y-1 max-h-24 overflow-y-auto">
+              {revisions.map(r => (
+                <div key={r.id} className="text-[11px] flex items-center gap-2 px-1 py-0.5 bg-slate-50 rounded">
+                  <span className="text-slate-600 truncate flex-1">{r.new_value.slice(0,60)}</span>
+                  <span className="text-slate-400">{r.username} {r.vote_count}票</span>
+                  <button onClick={async () => { try { const res = await voteRevision(sentence.id, r.id); setShowRevs(false); } catch(e) { alert(e instanceof Error?e.message:'投票失败'); } }} className="px-1 text-[10px] bg-amber-100 text-amber-700 rounded hover:bg-amber-200">投</button>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       )}
