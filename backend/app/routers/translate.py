@@ -86,9 +86,9 @@ async def translate_lecture(
     )
     translated = translated_result.scalar() or 0
 
-    # Determine cost by sentence count × coefficient (or manual override)
+    # Determine cost: charge by TOTAL sentences (user is publishing the lecture)
     remaining = total - translated
-    cost = await compute_price(db, "translate_lecture", remaining if remaining > 0 else total)
+    cost = await compute_price(db, "translate_lecture", total)
 
     # Credit deduction (skip if recovering from stuck state — user already paid)
     if was_stuck:
@@ -164,9 +164,7 @@ async def get_translation_cost(
         .where(Paragraph.lecture_id == lecture_id, Sentence.text_zh.isnot(None))
     )
     translated = translated_result.scalar() or 0
-
     remaining = total - translated
-    cost = await compute_price(db, "translate_lecture", remaining) if remaining > 0 else 0
 
     # Check publication status
     lecture_result = await db.execute(
@@ -174,12 +172,15 @@ async def get_translation_cost(
     )
     is_published = lecture_result.scalar() or False
 
+    # Cost = total sentences × coefficient (user is publishing the full lecture)
+    cost = await compute_price(db, "translate_lecture", total) if not is_published else 0
+
     return {
         "lecture_id": lecture_id,
         "total": total,
         "translated": translated,
         "remaining": remaining,
-        "cost": 0 if (total > 0 and translated == total and is_published) else cost,
+        "cost": cost,
         "already_translated": total > 0 and translated == total,
         "is_published": is_published,
         "user_credits": user.credits if user else None,
