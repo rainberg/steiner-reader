@@ -514,6 +514,7 @@ export async function fetchSentenceEdits(sentenceId: number): Promise<EditLogEnt
 export interface ContributionDisplay {
   username: string;
   contribution_type: string;
+  count: number;
   created_at: string;
 }
 

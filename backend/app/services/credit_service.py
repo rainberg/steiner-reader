@@ -213,21 +213,30 @@ async def add_contribution(db: AsyncSession, user_id: int, lecture_id: int, cont
 
 
 async def get_contributions(db: AsyncSession, lecture_id: int) -> list[dict]:
-    """Return list of {username, contribution_type, created_at} for a lecture."""
+    """Return deduplicated list of {username, contribution_type, credits, created_at}."""
+    from sqlalchemy import func as sa_func
     result = await db.execute(
-        select(Contribution, User.username)
+        select(
+            Contribution.user_id,
+            User.username,
+            Contribution.contribution_type,
+            sa_func.count(Contribution.id).label("count"),
+            sa_func.min(Contribution.created_at).label("first_at"),
+        )
         .join(User, Contribution.user_id == User.id)
         .where(Contribution.lecture_id == lecture_id)
-        .order_by(Contribution.created_at)
+        .group_by(Contribution.user_id, User.username, Contribution.contribution_type)
+        .order_by(sa_func.min(Contribution.created_at))
     )
     rows = result.all()
     return [
         {
             "username": username,
-            "contribution_type": row.contribution_type,
-            "created_at": row.created_at,
+            "contribution_type": cont_type,
+            "count": count,
+            "created_at": first_at,
         }
-        for row, username in rows
+        for uid, username, cont_type, count, first_at in rows
     ]
 
 
