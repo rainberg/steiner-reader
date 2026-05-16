@@ -173,10 +173,8 @@ function LectureNode({ node, depth }: { node: TreeLecture; depth: number }) {
             </span>
           )}
         </div>
-        <h2 className={`${depth >= 1 ? 'text-sm' : 'text-base'} font-semibold text-indigo-800 mt-0.5`}>
-          {node.title_de}
-        </h2>
-        {node.title_zh && <p className="text-xs text-indigo-500/70 mt-0.5">{node.title_zh}</p>}
+        {node.title_zh && <h2 className={`${depth >= 1 ? 'text-sm' : 'text-base'} font-semibold text-indigo-800 mt-0.5`}>{node.title_zh}</h2>}
+        {node.title_de && <p className="text-xs text-indigo-400/60 mt-0.5">{node.title_de}</p>}
         {hasContent && (
           <div className="flex items-center gap-2 mt-1.5 text-[10px] text-indigo-400">
             <span>{node.sentence_count} 句</span>
@@ -225,10 +223,8 @@ function LectureNode({ node, depth }: { node: TreeLecture; depth: number }) {
                 </span>
               )}
             </div>
-            <h3 className={`${depth >= 1 ? 'text-sm' : 'text-base'} font-medium text-gray-900 mt-1 leading-snug line-clamp-2 group-hover:text-indigo-600 transition-colors`}>
-              {node.title_de || 'Vortrag'}
-            </h3>
-            {node.title_zh && <p className="text-sm text-gray-500 mt-0.5 line-clamp-1">{node.title_zh}</p>}
+            {node.title_zh && <h3 className={`${depth >= 1 ? 'text-sm' : 'text-base'} font-medium text-gray-900 mt-1 leading-snug line-clamp-2 group-hover:text-indigo-600 transition-colors`}>{node.title_zh}</h3>}
+            {node.title_de && <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">{node.title_de}</p>}
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
