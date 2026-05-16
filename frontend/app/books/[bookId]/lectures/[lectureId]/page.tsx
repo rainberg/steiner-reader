@@ -283,7 +283,7 @@ ${contributions.length > 0 ? '<div class="contributors" style="margin-top:2em;pa
 
       <div className="max-w-4xl mx-auto px-4 py-6">
         <div className="mb-6">
-          <h1 className="text-xl font-bold text-slate-900 leading-tight">{lecture.title_de || 'Vortrag'}</h1>
+          <h1 className="text-xl font-bold text-slate-900 leading-tight whitespace-pre-line">{lecture.title_de || 'Vortrag'}</h1>
           <div className="text-sm text-slate-500 mt-1.5 flex items-center gap-3 flex-wrap">
             {lecture.location && <span>{lecture.location}</span>}
             {lecture.lecture_date && <span>{lecture.lecture_date}</span>}
