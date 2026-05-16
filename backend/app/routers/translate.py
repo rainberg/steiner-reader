@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db.database import async_session as AsyncSessionLocal, get_db
-from app.db.models import Lecture, Paragraph, Sentence, User
+from app.db.models import Lecture, Paragraph, Sentence, User, TranslationFix
 from app.routers.auth import require_user, get_current_user
 from app.services.translator import translate_lecture_sentences
 from app.services.credit_service import (
@@ -284,6 +284,13 @@ async def _do_translate_lecture(lecture_id: int, user_id: int):
                 for local_idx, zh_text in enumerate(translated_batch):
                     gidx = batch_start + local_idx
                     if gidx in sentence_map:
+                        # Apply translation fixes
+                        from app.db.models import TranslationFix
+                        fix_result = await db.execute(
+                            select(TranslationFix).where(TranslationFix.enabled == True).order_by(TranslationFix.id)
+                        )
+                        for fix in fix_result.scalars().all():
+                            zh_text = zh_text.replace(fix.pattern, fix.replacement)
                         sentence_map[gidx].text_zh = zh_text
 
                 # Update lecture progress

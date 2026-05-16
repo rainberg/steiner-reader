@@ -8,8 +8,9 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
-from app.db.models import User, CreditSetting, CreditTransaction
+from app.db.models import User, CreditSetting, CreditTransaction, TranslationFix
 from app.routers.auth import require_admin, pwd_context
+import re
 from .admin_translation_utils import admin_retranslate_lecture
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -509,3 +510,113 @@ async def get_credit_transactions(
     result = await db.execute(query)
     rows = result.scalars().all()
     return [CreditTransactionResponse.model_validate(r) for r in rows]
+
+
+# --- Translation Fix Endpoints ---
+
+class TranslationFixRequest(BaseModel):
+    pattern: str
+    replacement: str
+    enabled: bool = True
+
+
+class TranslationFixResponse(BaseModel):
+    id: int
+    pattern: str
+    replacement: str
+    enabled: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/translation-fixes", response_model=list[TranslationFixResponse])
+async def get_translation_fixes(
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(TranslationFix).order_by(TranslationFix.id))
+    return [TranslationFixResponse.model_validate(r) for r in result.scalars().all()]
+
+
+@router.post("/translation-fixes", response_model=TranslationFixResponse)
+async def create_translation_fix(
+    req: TranslationFixRequest,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    fix = TranslationFix(pattern=req.pattern, replacement=req.replacement, enabled=req.enabled)
+    db.add(fix)
+    await db.commit()
+    await db.refresh(fix)
+    return TranslationFixResponse.model_validate(fix)
+
+
+@router.put("/translation-fixes/{fix_id}", response_model=TranslationFixResponse)
+async def update_translation_fix(
+    fix_id: int,
+    req: TranslationFixRequest,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(TranslationFix).where(TranslationFix.id == fix_id))
+    fix = result.scalar_one_or_none()
+    if not fix:
+        raise HTTPException(404, "规则不存在")
+    fix.pattern = req.pattern
+    fix.replacement = req.replacement
+    fix.enabled = req.enabled
+    await db.commit()
+    await db.refresh(fix)
+    return TranslationFixResponse.model_validate(fix)
+
+
+@router.delete("/translation-fixes/{fix_id}")
+async def delete_translation_fix(
+    fix_id: int,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(TranslationFix).where(TranslationFix.id == fix_id))
+    fix = result.scalar_one_or_none()
+    if not fix:
+        raise HTTPException(404, "规则不存在")
+    await db.delete(fix)
+    await db.commit()
+    return {"success": True}
+
+
+@router.post("/translation-fixes/apply-all")
+async def apply_translation_fixes_to_all(
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Apply all enabled translation fixes to every existing text_zh in the DB."""
+    fixes_result = await db.execute(
+        select(TranslationFix).where(TranslationFix.enabled == True).order_by(TranslationFix.id)
+    )
+    fixes = fixes_result.scalars().all()
+    if not fixes:
+        return {"success": True, "updated": 0, "message": "没有启用的替换规则"}
+
+    from sqlalchemy import text as sa_text
+    total_updated = 0
+    batch_size = 5000
+
+    for fix in fixes:
+        updated = 0
+        while True:
+            result = await db.execute(
+                sa_text("UPDATE sentences SET text_zh = replace(text_zh, :pat, :rep) WHERE id IN (SELECT id FROM sentences WHERE text_zh IS NOT NULL AND text_zh != '' AND text_zh LIKE '%' || :pat || '%' LIMIT :lim) RETURNING id"),
+                {"pat": fix.pattern, "rep": fix.replacement, "lim": batch_size}
+            )
+            rows = result.fetchall()
+            if not rows:
+                break
+            updated += len(rows)
+            await db.commit()
+        total_updated += updated
+
+    await db.commit()
+    return {"success": True, "updated": total_updated, "message": f"已更新 {total_updated} 条翻译"}

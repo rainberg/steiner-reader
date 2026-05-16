@@ -30,7 +30,7 @@ export default function AdminPage() {
   const [editUsername, setEditUsername] = useState("");
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<"users" | "settings" | "recharge" | "upload">("users");
+  const [activeTab, setActiveTab] = useState<"users" | "settings" | "recharge" | "upload" | "fixes">("users");
   const [creditSettings, setCreditSettings] = useState<CreditSetting[]>([]);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [editEmail, setEditEmail] = useState("");
@@ -260,6 +260,14 @@ export default function AdminPage() {
             }`}
           >
             上传书籍
+          </button>
+          <button
+            onClick={() => setActiveTab("fixes")}
+            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition ${
+              activeTab === "fixes" ? "bg-white text-blue-600 border border-b-white border-gray-200 -mb-px" : "text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            翻译修正
           </button>
         </div>
       </div>
@@ -542,6 +550,8 @@ export default function AdminPage() {
       />
       ) : activeTab === "recharge" ? (
       <RechargeReviewTab />
+      ) : activeTab === "fixes" ? (
+      <TranslationFixesTab />
       ) : (
       <UploadTab />
       )}
@@ -865,6 +875,82 @@ function UploadTab() {
           {result.gaNumber && <p className="text-xs text-gray-400 mt-0.5">{result.gaNumber} · {result.chapters} 章节</p>}
         </div>
       )}
+    </div>
+  );
+}
+
+function TranslationFixesTab() {
+  const [fixes, setFixes] = useState<Array<{id:number;pattern:string;replacement:string;enabled:boolean}>>([]);
+  const [loading, setLoading] = useState(true);
+  const [msg, setMsg] = useState("");
+  const [editing, setEditing] = useState<number | null>(null);
+  const [editPat, setEditPat] = useState("");
+  const [editRep, setEditRep] = useState("");
+  const [newPat, setNewPat] = useState("");
+  const [newRep, setNewRep] = useState("");
+
+  const load = () => {
+    fetch("/api/admin/translation-fixes", { headers: { Authorization: `Bearer ${localStorage.getItem("steiner_token")}` } })
+      .then(r => r.json()).then(setFixes).finally(() => setLoading(false));
+  };
+  useEffect(load, []);
+
+  const addFix = async () => {
+    if (!newPat || !newRep) return;
+    await fetch("/api/admin/translation-fixes", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("steiner_token")}` }, body: JSON.stringify({ pattern: newPat, replacement: newRep, enabled: true }) });
+    setNewPat(""); setNewRep(""); load(); setMsg("已添加");
+  };
+
+  const updateFix = async (id: number) => {
+    await fetch(`/api/admin/translation-fixes/${id}`, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("steiner_token")}` }, body: JSON.stringify({ pattern: editPat, replacement: editRep, enabled: true }) });
+    setEditing(null); load(); setMsg("已保存");
+  };
+
+  const deleteFix = async (id: number) => {
+    await fetch(`/api/admin/translation-fixes/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${localStorage.getItem("steiner_token")}` } });
+    load(); setMsg("已删除");
+  };
+
+  const applyAll = async () => {
+    setMsg("正在应用...");
+    const res = await fetch("/api/admin/translation-fixes/apply-all", { method: "POST", headers: { Authorization: `Bearer ${localStorage.getItem("steiner_token")}` } });
+    const d = await res.json();
+    setMsg(d.message || "完成");
+  };
+
+  if (loading) return <div className="text-center py-8 text-gray-400">加载中...</div>;
+
+  return (
+    <div>
+      {msg && <div className="mb-4 p-2 bg-green-50 text-green-700 rounded text-sm">{msg}</div>}
+      <div className="mb-4 bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex gap-2 items-end">
+        <div className="flex-1"><label className="text-xs text-gray-500">匹配</label><input value={newPat} onChange={e => setNewPat(e.target.value)} className="w-full px-2 py-1.5 border rounded text-sm" /></div>
+        <div className="flex-1"><label className="text-xs text-gray-500">替换</label><input value={newRep} onChange={e => setNewRep(e.target.value)} className="w-full px-2 py-1.5 border rounded text-sm" /></div>
+        <button onClick={addFix} className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">添加</button>
+      </div>
+      <div className="mb-4"><button onClick={applyAll} className="px-4 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700">应用到全部现有翻译</button></div>
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <table className="w-full">
+          <thead className="bg-gray-50"><tr><th className="px-4 py-2 text-left text-xs text-gray-500">匹配</th><th className="px-4 py-2 text-left text-xs text-gray-500">替换</th><th className="px-4 py-2 text-left text-xs text-gray-500 w-20">状态</th><th className="px-4 py-2 text-left text-xs text-gray-500 w-24">操作</th></tr></thead>
+          <tbody className="divide-y divide-gray-100">
+            {fixes.map(f => (
+              <tr key={f.id} className="hover:bg-gray-50">
+                {editing === f.id ? (
+                  <><td className="px-4 py-2"><input value={editPat} onChange={e => setEditPat(e.target.value)} className="w-full px-2 py-1 border rounded text-sm" /></td>
+                  <td className="px-4 py-2"><input value={editRep} onChange={e => setEditRep(e.target.value)} className="w-full px-2 py-1 border rounded text-sm" /></td>
+                  <td className="px-4 py-2 text-xs"><span className="text-yellow-600">编辑中</span></td>
+                  <td className="px-4 py-2 flex gap-1"><button onClick={() => updateFix(f.id)} className="px-2 py-1 bg-green-600 text-white text-xs rounded">保存</button><button onClick={() => setEditing(null)} className="px-2 py-1 text-gray-500 text-xs">取消</button></td></>
+                ) : (
+                  <><td className="px-4 py-2 text-sm text-gray-700 font-mono">{f.pattern}</td>
+                  <td className="px-4 py-2 text-sm text-gray-600">{f.replacement}</td>
+                  <td className="px-4 py-2 text-xs">{f.enabled ? <span className="text-green-600">启用</span> : <span className="text-gray-400">禁用</span>}</td>
+                  <td className="px-4 py-2 flex gap-1"><button onClick={() => { setEditing(f.id); setEditPat(f.pattern); setEditRep(f.replacement); }} className="px-2 py-1 bg-blue-600 text-white text-xs rounded">编辑</button><button onClick={() => deleteFix(f.id)} className="px-2 py-1 bg-red-600 text-white text-xs rounded">删除</button></td></>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

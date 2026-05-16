@@ -192,6 +192,16 @@ class EditAuditLog(Base):
     user = relationship("User", back_populates="edit_audits", foreign_keys=[user_id])
 
 
+class TranslationFix(Base):
+    __tablename__ = "translation_fixes"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    pattern = Column(Text, nullable=False)
+    replacement = Column(Text, nullable=False)
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class RechargeRequest(Base):
     __tablename__ = "recharge_requests"
 
