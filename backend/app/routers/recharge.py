@@ -119,7 +119,7 @@ async def submit_recharge(
     if dup_req:
         raise HTTPException(
             status_code=409,
-            detail=f"该凭证已于 {dup_req.created_at.strftime('%m月%d日 %H:%M')} 提交（{dup_req.amount}元），请修改已有申请或等待审核"
+            detail="请勿重复提交，该凭证已有待审核的申请"
         )
 
     with open(filepath, "wb") as f:

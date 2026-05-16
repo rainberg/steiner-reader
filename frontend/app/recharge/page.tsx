@@ -17,6 +17,7 @@ export default function RechargePage() {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
+  const [warn, setWarn] = useState("");
   const [history, setHistory] = useState<Array<{
     id: number; amount: number; coefficient: number; credits: number;
     status: string; admin_note: string | null;
@@ -77,11 +78,14 @@ export default function RechargePage() {
         setAmount("");
         setImage(null);
         setPreview("");
+        setWarn("");
         loadHistory();
       } else if (res.status === 409) {
-        setError(data.detail || "提交失败");
+        setWarn(data.detail || "提交失败");
+        setError("");
       } else {
         setError(data.detail || "提交失败");
+        setWarn("");
       }
     } catch {
       setError("网络错误");
@@ -117,6 +121,7 @@ export default function RechargePage() {
         <h2 className="text-sm font-medium text-gray-700 mb-4">填写充值信息</h2>
 
         {error && <div className="bg-red-50 text-red-600 text-sm px-3 py-2 rounded-lg mb-4">{error}</div>}
+        {warn && <div className="bg-amber-50 text-amber-700 text-sm px-3 py-2 rounded-lg mb-4">{warn}</div>}
         {msg && <div className="bg-green-50 text-green-600 text-sm px-3 py-2 rounded-lg mb-4">{msg}</div>}
 
         <form onSubmit={handleSubmit} className="space-y-4">
