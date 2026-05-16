@@ -9,6 +9,7 @@ import SearchModal from './SearchModal';
 export default function Header() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
+  const [pendingRecharges, setPendingRecharges] = useState(0);
 
   useEffect(() => {
     const stored = getStoredUser();
@@ -23,6 +24,23 @@ export default function Header() {
           clearAuth();
           setUser(null);
         });
+    }
+
+    // Poll pending recharge count for admins
+    if (stored?.is_admin) {
+      const poll = () => {
+        const token = localStorage.getItem('steiner_token');
+        if (!token) return;
+        fetch('/api/recharge/admin/pending-requests', { headers: { Authorization: `Bearer ${token}` } })
+          .then(r => r.json())
+          .then(data => {
+            const pending = (data || []).filter((r: {status:string}) => r.status === 'pending').length;
+            setPendingRecharges(pending);
+          }).catch(() => {});
+      };
+      poll();
+      const interval = setInterval(poll, 60000);
+      return () => clearInterval(interval);
     }
 
     const handleAuthChange = () => {
@@ -61,8 +79,11 @@ export default function Header() {
                 <Link href="/upload" className="text-sm text-gray-500 hover:text-indigo-600 transition-colors px-2">
                   上传
                 </Link>
-                <Link href="/admin" className="text-sm text-purple-600 hover:text-purple-800 transition-colors px-2">
+                <Link href="/admin" className="text-sm text-purple-600 hover:text-purple-800 transition-colors px-2 relative">
                   管理
+                  {pendingRecharges > 0 && (
+                    <span className="absolute -top-2 -right-1 bg-red-500 text-white text-[10px] min-w-[18px] h-[18px] flex items-center justify-center rounded-full px-1">{pendingRecharges}</span>
+                  )}
                 </Link>
                 </>
               ) : null}
