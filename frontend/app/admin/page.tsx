@@ -966,8 +966,11 @@ function TranslationFixesTab() {
 }
 
 function BooksManageTab() {
-  const [books, setBooks] = useState<Array<{id:number;ga_number:string;title_de:string;title_zh:string|null}>>([]);
-  const [loading, setLoading] = useState(true);
+  const [books, setBooks] = useState<Array<{id:number;ga_number:string;title_de:string;title_zh:string|null;created_at:string}>>([]);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
   const [lectures, setLectures] = useState<Array<{id:number;title_de:string;title_zh:string|null;order_index:number}>>([]);
   const [selectedBook, setSelectedBook] = useState<{id:number;ga_number:string}|null>(null);
   const [msg, setMsg] = useState("");
@@ -975,21 +978,39 @@ function BooksManageTab() {
   const [editingLec, setEditingLec] = useState<number|null>(null);
   const [editDe, setEditDe] = useState("");
   const [editZh, setEditZh] = useState("");
-  const loadBooks = () => { fetch("/api/books").then(r => r.json()).then(setBooks).finally(() => setLoading(false)); };
-  useEffect(loadBooks, []);
+
+  const loadBooks = (p: number, s: string) => {
+    setLoading(true);
+    const qs = new URLSearchParams({page:String(p),page_size:"20",sort_by:"created_at",sort_dir:"desc"});
+    if(s) qs.set("search", s);
+    fetch("/api/books/summary?"+qs).then(r=>r.json()).then(data=>{setBooks(data);setHasMore(data.length===20);}).finally(()=>setLoading(false));
+  };
+
+  useEffect(()=>{loadBooks(1,"");},[]);
+
+  const doSearch = () => { setPage(1); loadBooks(1, search); };
+
   const loadLectures = (bookId: number, ga: string) => { setSelectedBook({id:bookId,ga_number:ga}); fetch("/api/books/"+bookId).then(r=>r.json()).then(d=>setLectures(d.lectures||[])); };
-  const saveBookTitle = async (bookId: number) => { const t=localStorage.getItem("steiner_token"); await fetch("/api/admin/books/"+bookId+"/titles",{method:"PUT",headers:{"Content-Type":"application/json","Authorization":"Bearer "+t},body:JSON.stringify({title_de:editDe,title_zh:editZh})}); setEditingBook(null); loadBooks(); setMsg("已保存"); };
+
+  const saveBookTitle = async (bookId: number) => { const t=localStorage.getItem("steiner_token"); await fetch("/api/admin/books/"+bookId+"/titles",{method:"PUT",headers:{"Content-Type":"application/json","Authorization":"Bearer "+t},body:JSON.stringify({title_de:editDe,title_zh:editZh})}); setEditingBook(null); loadBooks(page,search); setMsg("已保存"); };
+
   const saveLecTitle = async (lecId: number) => { const t=localStorage.getItem("steiner_token"); await fetch("/api/admin/lectures/"+lecId+"/titles",{method:"PUT",headers:{"Content-Type":"application/json","Authorization":"Bearer "+t},body:JSON.stringify({title_de:editDe,title_zh:editZh})}); setEditingLec(null); if(selectedBook) loadLectures(selectedBook.id,selectedBook.ga_number); setMsg("已保存"); };
 
-  if (loading) return <div className="text-center py-8 text-gray-400">加载中...</div>;
   return (<div>
     {msg&&<div className="mb-4 p-2 bg-green-50 text-green-700 rounded text-sm">{msg}</div>}
-    <div className="flex gap-4"><div className="w-1/2"><h3 className="text-sm font-medium text-gray-700 mb-2">书籍列表</h3><div className="bg-white rounded-xl shadow-sm border border-gray-100 max-h-96 overflow-y-auto">
-      {books.map(b=>(<div key={b.id} className={"px-4 py-2 border-b border-gray-50 cursor-pointer hover:bg-gray-50 "+(selectedBook && selectedBook.id===b.id?"bg-blue-50":"")} onClick={()=>loadLectures(b.id,b.ga_number)}>
+    <div className="flex gap-4"><div className="w-1/2"><div className="flex gap-2 mb-2">
+      <input value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>e.key==="Enter"&&doSearch()} placeholder="搜索 GA号/书名..." className="flex-1 px-2 py-1.5 border rounded text-sm"/>
+      <button onClick={doSearch} className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded">搜索</button>
+    </div>
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 max-h-96 overflow-y-auto">
+      {loading?<div className="text-center py-8 text-gray-400">加载中...</div>:books.length===0?<div className="text-center py-8 text-gray-400">无结果</div>:
+      books.map(b=>(<div key={b.id} className={"px-4 py-2 border-b border-gray-50 cursor-pointer hover:bg-gray-50 "+(selectedBook&&selectedBook.id===b.id?"bg-blue-50":"")} onClick={()=>loadLectures(b.id,b.ga_number)}>
         {editingBook===b.id ? (<div className="flex gap-2" onClick={e=>e.stopPropagation()}><input value={editDe} onChange={e=>setEditDe(e.target.value)} className="flex-1 px-2 py-1 border rounded text-sm"/><input value={editZh} onChange={e=>setEditZh(e.target.value)} className="flex-1 px-2 py-1 border rounded text-sm"/><button onClick={()=>saveBookTitle(b.id)} className="px-2 py-1 bg-green-600 text-white text-xs rounded">保存</button><button onClick={()=>setEditingBook(null)} className="px-2 py-1 text-gray-500 text-xs">取消</button></div>):
         (<div><div className="text-xs text-gray-400">{b.ga_number}</div><div className="text-sm text-gray-800 truncate">{b.title_zh||b.title_de}</div><div className="text-xs text-gray-400 truncate">{b.title_de}</div><button onClick={e=>{e.stopPropagation();setEditingBook(b.id);setEditDe(b.title_de);setEditZh(b.title_zh||"")}} className="text-xs text-blue-500 mt-1">编辑标题</button></div>)}
       </div>))}
-    </div></div><div className="w-1/2"><h3 className="text-sm font-medium text-gray-700 mb-2">{selectedBook?selectedBook.ga_number+" 章节":"选择书籍查看章节"}</h3><div className="bg-white rounded-xl shadow-sm border border-gray-100 max-h-96 overflow-y-auto">
+    </div>
+    <div className="flex justify-center gap-2 mt-2">{page>1&&<button onClick={()=>{const np=page-1;setPage(np);loadBooks(np,search);}} className="px-3 py-1 text-sm bg-gray-100 rounded hover:bg-gray-200">上一页</button>}{hasMore&&<button onClick={()=>{const np=page+1;setPage(np);loadBooks(np,search);}} className="px-3 py-1 text-sm bg-gray-100 rounded hover:bg-gray-200">下一页</button>}</div>
+    </div><div className="w-1/2"><h3 className="text-sm font-medium text-gray-700 mb-2">{selectedBook?selectedBook.ga_number+" 章节":"选择书籍查看章节"}</h3><div className="bg-white rounded-xl shadow-sm border border-gray-100 max-h-96 overflow-y-auto">
       {lectures.map(l=>(<div key={l.id} className="px-4 py-2 border-b border-gray-50">
         {editingLec===l.id ? (<div className="flex gap-2"><input value={editDe} onChange={e=>setEditDe(e.target.value)} className="flex-1 px-2 py-1 border rounded text-sm"/><input value={editZh} onChange={e=>setEditZh(e.target.value)} className="flex-1 px-2 py-1 border rounded text-sm"/><button onClick={()=>saveLecTitle(l.id)} className="px-2 py-1 bg-green-600 text-white text-xs rounded">保存</button><button onClick={()=>setEditingLec(null)} className="px-2 py-1 text-gray-500 text-xs">取消</button></div>):
         (<div><div className="text-sm text-gray-800">{l.title_zh||l.title_de}</div><div className="text-xs text-gray-400">{l.title_de}</div><button onClick={()=>{setEditingLec(l.id);setEditDe(l.title_de);setEditZh(l.title_zh||"")}} className="text-xs text-blue-500 mt-1">编辑</button></div>)}
