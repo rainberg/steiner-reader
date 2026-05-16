@@ -254,3 +254,21 @@ async def seed_default_settings(db: AsyncSession):
         ))
     await db.commit()
     logger.info("Seeded default credit coefficients")
+
+
+async def apply_translation_fixes(text: str, db: AsyncSession = None) -> str:
+    """Apply all enabled translation fixes to text. If no db, returns unchanged."""
+    if not text or not db:
+        return text
+    result = await db.execute(
+        select(CreditSetting).where(CreditSetting.key == "translation_fixes_loaded")
+    )
+    if not result.scalar_one_or_none():
+        return text
+    from app.db.models import TranslationFix
+    fixes_result = await db.execute(
+        select(TranslationFix).where(TranslationFix.enabled == True).order_by(TranslationFix.id)
+    )
+    for fix in fixes_result.scalars().all():
+        text = text.replace(fix.pattern, fix.replacement)
+    return text
