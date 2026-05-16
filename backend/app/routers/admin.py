@@ -8,7 +8,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
-from app.db.models import User, CreditSetting, CreditTransaction, TranslationFix
+from app.db.models import User, CreditSetting, CreditTransaction, TranslationFix, Book, Lecture
 from app.routers.auth import require_admin, pwd_context
 import re
 from .admin_translation_utils import admin_retranslate_lecture
@@ -620,3 +620,48 @@ async def apply_translation_fixes_to_all(
 
     await db.commit()
     return {"success": True, "updated": total_updated, "message": f"已更新 {total_updated} 条翻译"}
+
+
+# --- Book & Lecture Title Editing ---
+
+class TitleEditRequest(BaseModel):
+    title_de: Optional[str] = None
+    title_zh: Optional[str] = None
+
+
+@router.put("/books/{book_id}/titles")
+async def update_book_title(
+    book_id: int,
+    req: TitleEditRequest,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Book).where(Book.id == book_id))
+    book = result.scalar_one_or_none()
+    if not book:
+        raise HTTPException(404, "书籍不存在")
+    if req.title_de is not None:
+        book.title_de = req.title_de
+    if req.title_zh is not None:
+        book.title_zh = req.title_zh
+    await db.commit()
+    return {"success": True, "title_de": book.title_de, "title_zh": book.title_zh}
+
+
+@router.put("/lectures/{lecture_id}/titles")
+async def update_lecture_title(
+    lecture_id: int,
+    req: TitleEditRequest,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Lecture).where(Lecture.id == lecture_id))
+    lec = result.scalar_one_or_none()
+    if not lec:
+        raise HTTPException(404, "讲座不存在")
+    if req.title_de is not None:
+        lec.title_de = req.title_de
+    if req.title_zh is not None:
+        lec.title_zh = req.title_zh
+    await db.commit()
+    return {"success": True, "title_de": lec.title_de, "title_zh": lec.title_zh}
