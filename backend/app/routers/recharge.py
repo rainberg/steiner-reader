@@ -298,11 +298,8 @@ async def get_payment_qr():
 
 
 @router.get("/payment-proof/{filename}")
-async def get_payment_proof(
-    filename: str,
-    admin: User = Depends(require_admin),
-):
-    """Serve a payment proof image (admin only)."""
+async def get_payment_proof(filename: str):
+    """Serve a payment proof image."""
     filepath = os.path.join(RECHARGE_DIR, filename)
     if not os.path.exists(filepath) or ".." in filename:
         raise HTTPException(status_code=404, detail="文件不存在")
