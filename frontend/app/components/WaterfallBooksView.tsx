@@ -38,8 +38,7 @@ export default function WaterfallBooksView() {
           <p className="text-xs text-gray-400 mt-1 line-clamp-2">{book.title_de}</p>
           <div className="flex items-center gap-3 mt-3 pt-3 border-t border-gray-50">
             <span className="text-[10px] text-gray-400">{book.ga_number}</span>
-            <span className="text-[10px] text-gray-300">{book.lecture_count} 章节</span>
-            <span className="text-[10px] text-gray-300">{book.sentence_count} 句</span>
+            <span className="text-[10px] text-gray-300">{book.lecture_count} 章</span>
           </div>
         </Link>
       ))}
