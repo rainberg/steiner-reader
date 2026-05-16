@@ -106,6 +106,11 @@ async def get_lecture_simple(
     lecture = result.scalar_one_or_none()
     if not lecture:
         raise HTTPException(status_code=404, detail="Lecture not found")
+
+    from app.services.credit_service import compute_price
+    edit_trans_cost = await compute_price(db, "edit_translation_coefficient", 1)
+    edit_src_cost = await compute_price(db, "edit_source_coefficient", 1)
+
     return {
         "id": lecture.id,
         "book_id": lecture.book_id,
@@ -115,4 +120,6 @@ async def get_lecture_simple(
         "lecture_date": str(lecture.lecture_date) if lecture.lecture_date else None,
         "location": lecture.location,
         "is_published": lecture.is_published,
+        "edit_translation_cost": edit_trans_cost,
+        "edit_source_cost": edit_src_cost,
     }

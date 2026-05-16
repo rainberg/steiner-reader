@@ -45,8 +45,8 @@ export default function LecturePage() {
   const [isPublished, setIsPublished] = useState(false);
   const [downloadPerm, setDownloadPerm] = useState<DownloadPermission | null>(null);
   const [contributions, setContributions] = useState<ContributionDisplay[]>([]);
-  const [editTransCost, setEditTransCost] = useState<number>(2);
-  const [editSourceCost, setEditSourceCost] = useState<number>(3);
+  const [editTransCost, setEditTransCost] = useState<number>(1);
+  const [editSourceCost, setEditSourceCost] = useState<number>(1);
   const [editingSentenceId, setEditingSentenceId] = useState<number | null>(null);
   const [editField, setEditField] = useState<'text_de' | 'text_zh'>('text_zh');
   const [editValue, setEditValue] = useState('');
