@@ -13,6 +13,9 @@ import {
   editSentence,
   fetchSentenceEdits,
   fetchContributions,
+  fetchSentenceRevisions,
+  voteRevision,
+  RevisionItem,
   Lecture,
   Paragraph,
   Sentence,
@@ -51,6 +54,7 @@ export default function LecturePage() {
   const [editField, setEditField] = useState<'text_de' | 'text_zh'>('text_zh');
   const [editValue, setEditValue] = useState('');
   const [editMsg, setEditMsg] = useState<string | null>(null);
+  const [revisionsMap, setRevisionsMap] = useState<Record<number, RevisionItem[]>>({});
 
   const startPolling = useCallback(() => {
     if (pollingRef.current) clearInterval(pollingRef.current);

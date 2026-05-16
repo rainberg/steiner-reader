@@ -509,6 +509,33 @@ export async function fetchSentenceEdits(sentenceId: number): Promise<EditLogEnt
   return res.json();
 }
 
+// --- Revisions ---
+
+export interface RevisionItem {
+  id: number;
+  field: string;
+  new_value: string;
+  user_id: number;
+  username: string;
+  vote_count: number;
+  created_at: string;
+}
+
+export async function fetchSentenceRevisions(sentenceId: number): Promise<RevisionItem[]> {
+  const res = await timedFetch(`${API_BASE}/api/sentences/${sentenceId}/revisions`, { cache: 'no-store' });
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function voteRevision(sentenceId: number, revisionId: number): Promise<{success:boolean;vote_count:number;credits_remaining:number}> {
+  const res = await authFetch(`/api/sentences/${sentenceId}/revisions/${revisionId}/vote`, { method: 'POST' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '投票失败' }));
+    throw new Error(err.detail || '投票失败');
+  }
+  return res.json();
+}
+
 // --- Contributions ---
 
 export interface ContributionDisplay {
