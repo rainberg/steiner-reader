@@ -546,13 +546,13 @@ function SentenceView({
 
   if (mode === 'zh-only') {
     return (
-      <div className="flex items-start gap-2 group">
+      <div className="flex items-start gap-2 group mb-3">
         <span className="text-xs text-slate-300 font-mono shrink-0 min-w-[3rem] text-right select-none">§{paragraphIndex}.{index}</span>
         {sentence.image_url && <ImageView url={sentence.image_url} />}
         {hasTranslation ? (
-          <p className="text-slate-700 leading-relaxed text-[15px] flex-1">{zh}</p>
+          <p className="text-slate-700 leading-relaxed text-base flex-1">{zh}</p>
         ) : (
-          <p className="text-slate-300 italic text-sm flex-1">（未翻译）</p>
+          <p className="text-slate-300 italic text-base flex-1">（未翻译）</p>
         )}
         {canEdit && hasTranslation && (
           <button
@@ -590,10 +590,10 @@ function SentenceView({
   return (
     <div className="flex items-start gap-2 group" onDoubleClick={onToggle}>
       <span className="text-xs text-slate-300 font-mono shrink-0 min-w-[3rem] text-right select-none">§{paragraphIndex}.{index}</span>
-      <div className="flex-1">
+      <div className="flex-1 mb-3">
         {sentence.image_url && <ImageView url={sentence.image_url} />}
         <p className="text-slate-800 leading-relaxed text-[15px]">{de}</p>
-        {hasTranslation && isZhVisible && <p className="text-slate-500 text-sm mt-1 leading-relaxed">{zh}</p>}
+        {hasTranslation && isZhVisible && <p className="text-slate-500 text-base mt-2 leading-relaxed">{zh}</p>}
       </div>
       {canEdit && (
         <div className="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition">
