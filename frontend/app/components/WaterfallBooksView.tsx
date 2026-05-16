@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { fetchBookSummaries, BookSummary } from '@/lib/api';
+import { fetchBookSummariesPaginated, BookSummary } from '@/lib/api';
 
 export default function WaterfallBooksView() {
   const [books, setBooks] = useState<BookSummary[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchBookSummaries()
+    fetchBookSummariesPaginated({ page_size: 500 })
       .then(data => {
         // Random shuffle
         for (let i = data.length - 1; i > 0; i--) {
