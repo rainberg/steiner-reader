@@ -106,10 +106,8 @@ export default function BookDetailPage() {
             </span>
           )}
         </div>
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 leading-tight">
-          {book.title_de}
-        </h1>
-        {book.title_zh && <p className="text-base text-gray-500 mt-1">{book.title_zh}</p>}
+        {book.title_zh && <h2 className="text-lg sm:text-xl font-semibold text-gray-700 leading-tight">{book.title_zh}</h2>}
+        <p className="text-sm text-gray-500 mt-1">{book.title_de}</p>
         {book.subtitle_de && <p className="text-sm text-gray-400 mt-0.5 italic">{book.subtitle_de}</p>}
 
         {/* Book stats summary */}
