@@ -56,6 +56,14 @@ async def translate_lecture(
     if not lecture:
         raise HTTPException(status_code=404, detail="章节不存在")
 
+    # If is_translating=true but not in _running_tasks, the previous task died
+    # (server restart or crash). Reset the flag so user can retry.
+    if lecture.is_translating and lecture_id not in _running_tasks:
+        lecture.is_translating = False
+        lecture.translate_progress = 0
+        lecture.translate_total = 0
+        await db.commit()
+
     if lecture.is_published:
         raise HTTPException(status_code=400, detail="该讲译文已公开，无需再次翻译")
 

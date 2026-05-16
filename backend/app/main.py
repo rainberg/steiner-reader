@@ -16,10 +16,18 @@ from app.routers.auth import require_user
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup: seed default credit settings if table is empty."""
+    """Startup: seed default credit settings, clear stale translation flags."""
     async with async_session() as db:
         from app.services.credit_service import seed_default_settings
         await seed_default_settings(db)
+        # Reset translation flags stuck from server restart/crash
+        from sqlalchemy import update
+        from app.db.models import Lecture
+        await db.execute(
+            update(Lecture).where(Lecture.is_translating == True)
+            .values(is_translating=False, translate_progress=0, translate_total=0)
+        )
+        await db.commit()
     yield
 
 
