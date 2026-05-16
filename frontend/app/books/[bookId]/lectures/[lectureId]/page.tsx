@@ -102,7 +102,7 @@ export default function LecturePage() {
 
       try {
         const status = await getTranslationStatus(lectureId);
-        if (!status.completed && status.translated > 0) {
+        if (status.is_translating && !status.completed) {
           setTranslating(true);
           startPolling();
         }

@@ -142,12 +142,6 @@ export interface TranslationStatus {
   is_translating?: boolean;
 }
 
-export interface TranslationStatus {
-  lecture_id: number;
-  total: number;
-  translated: number;
-  completed: boolean;
-}
 
 export interface TranslateResult {
   lecture_id: number;
