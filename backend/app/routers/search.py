@@ -55,10 +55,11 @@ async def search_steiner(q: str = Query(..., min_length=1), k: int = Query(5, ge
         items = []
         for r in results:
             p = r.get("payload", {})
+            meta = p.get("metadata", {}) if isinstance(p.get("metadata"), dict) else {}
             items.append(SearchResult(
-                content_de=p.get("de_content", p.get("content", "")),
+                content_de=p.get("page_content", ""),
                 content_zh=p.get("zh_content", ""),
-                book=p.get("source", p.get("book", "")),
+                book=meta.get("source", ""),
                 score=r.get("score", 0),
             ))
 
