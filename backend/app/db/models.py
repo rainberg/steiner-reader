@@ -199,6 +199,7 @@ class RechargeRequest(Base):
     amount = Column(Integer, nullable=False)
     coefficient = Column(Integer, default=10)
     payment_image = Column(String(255))
+    image_hash = Column(String(64))
     status = Column(String(20), default="pending")  # pending, approved, rejected
     admin_note = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)

@@ -1,5 +1,6 @@
 """Recharge router — user submits application, admin reviews and approves."""
 
+import hashlib
 import os
 import uuid
 import logging
@@ -7,7 +8,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
@@ -104,6 +105,19 @@ async def submit_recharge(
     filepath = os.path.join(RECHARGE_DIR, filename)
 
     content = await payment_image.read()
+    file_hash = hashlib.sha256(content).hexdigest()
+
+    # Check for duplicate submission by same user
+    dup_result = await db.execute(
+        select(func.count(RechargeRequest.id)).where(
+            RechargeRequest.user_id == user.id,
+            RechargeRequest.image_hash == file_hash,
+            RechargeRequest.status == "pending",
+        )
+    )
+    if dup_result.scalar() > 0:
+        raise HTTPException(status_code=400, detail="该凭证已提交过，请勿重复提交")
+
     with open(filepath, "wb") as f:
         f.write(content)
 
@@ -113,6 +127,7 @@ async def submit_recharge(
         amount=amount,
         coefficient=coefficient,
         payment_image=filename,
+        image_hash=file_hash,
         status="pending",
     )
     db.add(req)
