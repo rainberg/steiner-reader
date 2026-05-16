@@ -77,6 +77,8 @@ export default function RechargePage() {
         setImage(null);
         setPreview("");
         loadHistory();
+      } else if (res.status === 409) {
+        setError(data.detail || "提交失败");
       } else {
         setError(data.detail || "提交失败");
       }
@@ -173,7 +175,7 @@ export default function RechargePage() {
                   }`}>{statusLabel(r.status)}</span>
                   {r.admin_note && <span className="text-gray-400 text-xs ml-2">{r.admin_note}</span>}
                 </div>
-                <span className="text-gray-400 text-xs">{new Date(r.created_at).toLocaleDateString("zh-CN")}</span>
+                <span className="text-gray-400 text-xs">{new Date(r.created_at).toLocaleString("zh-CN", {month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}</span>
               </div>
             ))}
           </div>

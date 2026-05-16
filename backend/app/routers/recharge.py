@@ -109,14 +109,18 @@ async def submit_recharge(
 
     # Check for duplicate submission by same user
     dup_result = await db.execute(
-        select(func.count(RechargeRequest.id)).where(
+        select(RechargeRequest).where(
             RechargeRequest.user_id == user.id,
             RechargeRequest.image_hash == file_hash,
             RechargeRequest.status == "pending",
-        )
+        ).order_by(RechargeRequest.created_at.desc()).limit(1)
     )
-    if dup_result.scalar() > 0:
-        raise HTTPException(status_code=400, detail="该凭证已提交过，请勿重复提交")
+    dup_req = dup_result.scalar_one_or_none()
+    if dup_req:
+        raise HTTPException(
+            status_code=409,
+            detail=f"该凭证已于 {dup_req.created_at.strftime('%m月%d日 %H:%M')} 提交（{dup_req.amount}元），请修改已有申请或等待审核"
+        )
 
     with open(filepath, "wb") as f:
         f.write(content)
