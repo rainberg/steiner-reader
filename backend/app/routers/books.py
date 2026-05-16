@@ -357,6 +357,10 @@ async def get_lecture(
                 revs = winning_revisions[sent.id]
                 if "text_de" in revs:
                     sent.text_de = revs["text_de"]
+                    # Original text changed — invalidate old translation unless
+                    # a matching text_zh revision also won
+                    if "text_zh" not in revs:
+                        sent.text_zh = None
                 if "text_zh" in revs:
                     sent.text_zh = revs["text_zh"]
 
