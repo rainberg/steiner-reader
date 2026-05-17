@@ -30,9 +30,9 @@ export interface Paragraph {
 
 export interface User {
   id: number;
+  username: string;
   email: string;
-  name?: string;
   credits: number;
-  is_admin: boolean;
+  is_admin: number;
   created_at?: string;
 }

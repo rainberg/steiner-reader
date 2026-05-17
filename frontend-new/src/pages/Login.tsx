@@ -8,34 +8,28 @@ export default function Login() {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
   const { setUser } = useStore();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setError('');
     try {
-      let user;
+      let data;
       if (isLogin) {
-        user = await api.login(email, password);
+        data = await api.login(email, password);
       } else {
-        user = await api.register(email, password, name);
+        data = await api.register(username, email, password);
       }
-      setUser(user);
+      setUser(data.user);
       navigate('/');
-    } catch (error) {
-      console.error('Auth failed:', error);
-      // Mock login for demo
-      setUser({
-        id: 1,
-        email,
-        name: name || email.split('@')[0],
-        credits: 100,
-        is_admin: false,
-      });
-      navigate('/');
+    } catch (err: any) {
+      console.error('Auth failed:', err);
+      setError(err.message || '认证失败，请重试');
     } finally {
       setIsLoading(false);
     }
@@ -60,19 +54,24 @@ export default function Login() {
         </div>
 
         <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-lg p-8">
+          {error && (
+            <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-lg text-sm">
+              {error}
+            </div>
+          )}
           <div className="space-y-4">
             {!isLogin && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  姓名
+                  用户名
                 </label>
                 <input
                   type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
                   required
                   className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1e3a8a] focus:border-transparent transition-all"
-                  placeholder="输入您的姓名"
+                  placeholder="输入您的用户名"
                 />
               </div>
             )}
@@ -91,13 +90,14 @@ export default function Login() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-              密码
+                密码
               </label>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                minLength={6}
                 className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1e3a8a] focus:border-transparent transition-all"
                 placeholder="••••••••"
               />
@@ -115,7 +115,10 @@ export default function Login() {
           <div className="mt-6 text-center">
             <button
               type="button"
-              onClick={() => setIsLogin(!isLogin)}
+              onClick={() => {
+                setIsLogin(!isLogin);
+                setError('');
+              }}
               className="text-[#1e3a8a] hover:text-[#1e3a8a]/80 text-sm font-medium"
             >
               {isLogin

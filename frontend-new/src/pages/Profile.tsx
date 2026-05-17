@@ -1,9 +1,15 @@
 import { Link } from 'react-router-dom';
 import { ArrowLeft, User, Coins, Settings, LogOut } from 'lucide-react';
 import { useStore } from '../hooks/useStore';
+import { api } from '../lib/api';
 
 export default function Profile() {
   const { user, setUser } = useStore();
+
+  const handleLogout = () => {
+    api.logout();
+    setUser(null);
+  };
 
   if (!user) {
     return (
@@ -39,7 +45,7 @@ export default function Profile() {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-gray-900 font-['Playfair_Display']">
-                {user.name || user.email}
+                {user.username}
               </h1>
               <p className="text-gray-600">{user.email}</p>
             </div>
@@ -66,7 +72,7 @@ export default function Profile() {
             </Link>
 
             <button
-              onClick={() => setUser(null)}
+              onClick={handleLogout}
               className="w-full flex items-center justify-center gap-2 p-4 text-red-600 hover:bg-red-50 rounded-xl transition-colors"
             >
               <LogOut className="h-5 w-5" />

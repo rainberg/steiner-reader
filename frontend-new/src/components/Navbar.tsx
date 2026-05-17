@@ -30,9 +30,9 @@ export default function Navbar() {
               <>
                 <Link to="/profile" className="text-gray-700 hover:text-[#1e3a8a] transition-colors flex items-center gap-1">
                   <User className="h-4 w-4" />
-                  {user.name || user.email}
+                  {user.username || user.email}
                 </Link>
-                {user.is_admin && (
+                {user.is_admin === 1 && (
                   <Link to="/admin" className="text-gray-700 hover:text-[#1e3a8a] transition-colors">
                     管理
                   </Link>
@@ -79,7 +79,7 @@ export default function Navbar() {
                   >
                     个人中心
                   </Link>
-                  {user.is_admin && (
+                  {user.is_admin === 1 && (
                     <Link
                       to="/admin"
                       className="text-gray-700 hover:text-[#1e3a8a] transition-colors"

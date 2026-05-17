@@ -5,7 +5,7 @@ import { useStore } from '../hooks/useStore';
 export default function Admin() {
   const { user } = useStore();
 
-  if (!user?.is_admin) {
+  if (!user || user.is_admin !== 1) {
     return (
       <div className="min-h-screen pt-24 pb-16 flex items-center justify-center">
         <div className="text-center">

@@ -8,7 +8,7 @@ export default function Upload() {
   const [file, setFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
-  if (!user?.is_admin) {
+  if (!user || user.is_admin !== 1) {
     return (
       <div className="min-h-screen pt-24 pb-16 flex items-center justify-center">
         <div className="text-center">
