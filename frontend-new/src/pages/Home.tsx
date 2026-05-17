@@ -3,7 +3,7 @@ import { Search, Grid, Layers } from 'lucide-react';
 import BookCard from '../components/BookCard';
 import { useStore } from '../hooks/useStore';
 import { api } from '../lib/api';
-import type { Book } from '../types';
+import type { BookSummary, BookGroup } from '../types';
 
 export default function Home() {
   const {
@@ -21,7 +21,7 @@ export default function Home() {
     const loadBooks = async () => {
       setIsLoading(true);
       try {
-        const data = await api.getBooks();
+        const data = await api.getBookSummaries();
         setBooks(data);
       } catch (error) {
         console.error('Failed to load books:', error);
@@ -29,45 +29,63 @@ export default function Home() {
         setBooks([
           {
             id: 1,
-            title: 'The Philosophy of Freedom',
-            author: 'Rudolf Steiner',
-            description: 'A fundamental work on epistemology and the philosophy of freedom.',
-            category: 'Philosophy',
+            ga_number: 'GA001',
+            title_de: 'Die Philosophie der Freiheit',
+            title_zh: '自由的哲学',
+            lecture_count: 12,
+            sentence_count: 3456,
+            image_count: 0,
+            translated_count: 1200,
           },
           {
             id: 2,
-            title: 'How to Know Higher Worlds',
-            author: 'Rudolf Steiner',
-            description: 'A guide to spiritual development and higher knowledge.',
-            category: 'Spirituality',
+            ga_number: 'GA002',
+            title_de: 'Wie erlangt man Erkenntnisse der höheren Welten?',
+            title_zh: '如何认识高层世界',
+            lecture_count: 8,
+            sentence_count: 2345,
+            image_count: 0,
+            translated_count: 800,
           },
           {
             id: 3,
-            title: 'Theosophy',
-            author: 'Rudolf Steiner',
-            description: 'An introduction to anthroposophy and spiritual science.',
-            category: 'Theosophy',
+            ga_number: 'GA003',
+            title_de: 'Theosophie',
+            title_zh: '神智学',
+            lecture_count: 10,
+            sentence_count: 2890,
+            image_count: 0,
+            translated_count: 1500,
           },
           {
             id: 4,
-            title: 'Knowledge of the Higher Worlds',
-            author: 'Rudolf Steiner',
-            description: 'Methods for attaining spiritual perception.',
-            category: 'Spirituality',
+            ga_number: 'GA004',
+            title_de: 'Die Geheimwissenschaft im Umriß',
+            title_zh: '奥秘科学大纲',
+            lecture_count: 15,
+            sentence_count: 4567,
+            image_count: 0,
+            translated_count: 2000,
           },
           {
             id: 5,
-            title: 'Occult Science',
-            author: 'Rudolf Steiner',
-            description: 'An outline of esoteric knowledge and spiritual science.',
-            category: 'Science',
+            ga_number: 'GA005',
+            title_de: 'Von Seelenrätseln',
+            title_zh: '灵魂之谜',
+            lecture_count: 6,
+            sentence_count: 1876,
+            image_count: 0,
+            translated_count: 600,
           },
           {
             id: 6,
-            title: 'The Fourth Dimension',
-            author: 'Rudolf Steiner',
-            description: 'Explorations of space, time, and higher dimensions.',
-            category: 'Science',
+            ga_number: 'GA006',
+            title_de: 'Das Christentum als mystische Tatsache',
+            title_zh: '基督教作为神秘事实',
+            lecture_count: 9,
+            sentence_count: 2789,
+            image_count: 0,
+            translated_count: 900,
           },
         ]);
       } finally {
@@ -83,19 +101,26 @@ export default function Home() {
     const query = searchQuery.toLowerCase();
     return books.filter(
       (book) =>
-        book.title.toLowerCase().includes(query) ||
-        book.author.toLowerCase().includes(query) ||
-        book.category.toLowerCase().includes(query)
+        book.title_de.toLowerCase().includes(query) ||
+        (book.title_zh && book.title_zh.toLowerCase().includes(query)) ||
+        (book.ga_number && book.ga_number.toLowerCase().includes(query))
     );
   }, [books, searchQuery]);
 
   const groupedBooks = useMemo(() => {
-    const groups: Record<string, Book[]> = {};
+    const groups: Record<string, BookSummary[]> = {};
     books.forEach((book) => {
-      if (!groups[book.category]) {
-        groups[book.category] = [];
+      const ga = book.ga_number || '';
+      let prefix = '其他';
+      if (ga.startsWith('GA')) {
+        const num = parseInt(ga.substring(2)) || 0;
+        const decade = Math.floor(num / 10) * 10;
+        prefix = `GA${String(decade).padStart(3, '0')}-${String(decade + 9).padStart(3, '0')}`;
       }
-      groups[book.category].push(book);
+      if (!groups[prefix]) {
+        groups[prefix] = [];
+      }
+      groups[prefix].push(book);
     });
     return groups;
   }, [books]);
@@ -115,7 +140,7 @@ export default function Home() {
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
             <input
               type="text"
-              placeholder="搜索书籍、作者..."
+              placeholder="搜索书籍、GA编号..."
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);

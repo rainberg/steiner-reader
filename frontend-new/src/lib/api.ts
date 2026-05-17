@@ -1,4 +1,4 @@
-import type { Book, Lecture, Paragraph, User } from '../types';
+import type { Book, BookSummary, BookGroup, Lecture, Paragraph, User } from '../types';
 
 const API_BASE = '';
 
@@ -83,15 +83,19 @@ class ApiClient {
     return this.request<Book[]>('/api/books');
   }
 
+  async getBookSummaries(): Promise<BookSummary[]> {
+    return this.request<BookSummary[]>('/api/books/summary');
+  }
+
+  async getBookGroups(): Promise<BookGroup[]> {
+    return this.request<BookGroup[]>('/api/books/groups');
+  }
+
   async getBook(id: number): Promise<Book> {
     return this.request<Book>(`/api/books/${id}`);
   }
 
   // Lectures
-  async getLectures(bookId: number): Promise<Lecture[]> {
-    return this.request<Lecture[]>(`/api/books/${bookId}/lectures`);
-  }
-
   async getLecture(bookId: number, lectureId: number): Promise<Lecture> {
     return this.request<Lecture>(`/api/books/${bookId}/lectures/${lectureId}`);
   }
@@ -102,8 +106,8 @@ class ApiClient {
   }
 
   // Translation
-  async translateParagraph(paragraphId: number): Promise<Paragraph> {
-    return this.request<Paragraph>(`/api/translate/paragraph/${paragraphId}`, {
+  async translateLecture(lectureId: number): Promise<any> {
+    return this.request<any>(`/api/lectures/${lectureId}/translate`, {
       method: 'POST',
     });
   }

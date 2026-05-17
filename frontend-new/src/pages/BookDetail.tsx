@@ -15,27 +15,24 @@ export default function BookDetail() {
       if (!bookId) return;
       setIsLoading(true);
       try {
-        const [bookData, lecturesData] = await Promise.all([
-          api.getBook(parseInt(bookId)),
-          api.getLectures(parseInt(bookId)),
-        ]);
+        const bookData = await api.getBook(parseInt(bookId));
         setBook(bookData);
-        setLectures(lecturesData);
+        setLectures(bookData.lectures || []);
       } catch (error) {
         console.error('Failed to load book:', error);
         // Mock data for demo
         setBook({
           id: parseInt(bookId),
-          title: 'The Philosophy of Freedom',
-          author: 'Rudolf Steiner',
-          description: 'A fundamental work on epistemology and the philosophy of freedom. In this seminal work, Steiner lays the groundwork for his spiritual science.',
-          category: 'Philosophy',
+          ga_number: 'GA001',
+          title_de: 'Die Philosophie der Freiheit',
+          title_zh: '自由的哲学',
+          lectures: [],
         });
         setLectures([
-          { id: 1, book_id: parseInt(bookId), title: 'Introduction', number: 1 },
-          { id: 2, book_id: parseInt(bookId), title: 'Knowledge of Freedom', number: 2 },
-          { id: 3, book_id: parseInt(bookId), title: 'Moral Imagination', number: 3 },
-          { id: 4, book_id: parseInt(bookId), title: 'Ethical Individualism', number: 4 },
+          { id: 1, book_id: parseInt(bookId), title_de: 'Introduction', title_zh: '导言', order_index: 1, lecture_date: null, location: null, sentence_count: 120 },
+          { id: 2, book_id: parseInt(bookId), title_de: 'Knowledge of Freedom', title_zh: '自由的知识', order_index: 2, lecture_date: null, location: null, sentence_count: 200 },
+          { id: 3, book_id: parseInt(bookId), title_de: 'Moral Imagination', title_zh: '道德想象力', order_index: 3, lecture_date: null, location: null, sentence_count: 180 },
+          { id: 4, book_id: parseInt(bookId), title_de: 'Ethical Individualism', title_zh: '伦理个人主义', order_index: 4, lecture_date: null, location: null, sentence_count: 150 },
         ]);
       } finally {
         setIsLoading(false);
@@ -89,10 +86,10 @@ export default function BookDetail() {
         <div className="flex flex-col lg:flex-row gap-8 mb-12">
           <div className="w-full lg:w-64 flex-shrink-0">
             <div className="aspect-[3/4] bg-gradient-to-br from-[#e0e7ff] to-[#f8f5f0] rounded-2xl shadow-lg overflow-hidden">
-              {book.cover_image ? (
+              {book.cover_url ? (
                 <img
-                  src={book.cover_image}
-                  alt={book.title}
+                  src={book.cover_url}
+                  alt={book.title_de}
                   className="w-full h-full object-cover"
                 />
               ) : (
@@ -105,13 +102,17 @@ export default function BookDetail() {
 
           <div className="flex-1">
             <span className="inline-block px-3 py-1 bg-[#e0e7ff] text-[#1e3a8a] text-sm rounded-full mb-4">
-              {book.category}
+              {book.ga_number || 'GA'}
             </span>
             <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4 font-['Playfair_Display']">
-              {book.title}
+              {book.title_de}
             </h1>
-            <p className="text-xl text-gray-600 mb-6">{book.author}</p>
-            <p className="text-gray-700 leading-relaxed">{book.description}</p>
+            {book.title_zh && (
+              <p className="text-xl text-gray-600 mb-6">{book.title_zh}</p>
+            )}
+            <p className="text-gray-700 leading-relaxed">
+              {book.title_de} 是鲁道夫·施泰纳的重要著作之一。
+            </p>
           </div>
         </div>
 
@@ -128,14 +129,17 @@ export default function BookDetail() {
                   className="flex items-center gap-4 p-4 rounded-xl hover:bg-[#f8f5f0] transition-colors group"
                 >
                   <div className="w-10 h-10 bg-[#1e3a8a] text-white rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0">
-                    {lecture.number}
+                    {lecture.order_index}
                   </div>
                   <div className="flex-1">
                     <h3 className="text-lg font-semibold text-gray-900 group-hover:text-[#1e3a8a] transition-colors">
-                      {lecture.title}
+                      {lecture.title_de}
                     </h3>
-                    {lecture.date && (
-                      <p className="text-sm text-gray-500">{lecture.date}</p>
+                    {lecture.title_zh && (
+                      <p className="text-sm text-gray-500">{lecture.title_zh}</p>
+                    )}
+                    {lecture.lecture_date && (
+                      <p className="text-sm text-gray-400">{lecture.lecture_date}</p>
                     )}
                   </div>
                   <ArrowLeft className="h-5 w-5 text-gray-400 group-hover:text-[#1e3a8a] group-hover:translate-x-1 transition-all rotate-180" />

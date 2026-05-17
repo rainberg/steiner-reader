@@ -1,11 +1,11 @@
 import { create } from 'zustand';
-import type { Book, User } from '../types';
+import type { BookSummary, User } from '../types';
 
 interface AppState {
   user: User | null;
   setUser: (user: User | null) => void;
-  books: Book[];
-  setBooks: (books: Book[]) => void;
+  books: BookSummary[];
+  setBooks: (books: BookSummary[]) => void;
   isLoading: boolean;
   setIsLoading: (loading: boolean) => void;
   searchQuery: string;
