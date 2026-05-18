@@ -1,0 +1,58 @@
+version: "3.9"
+
+services:
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx-new.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - frontend
+      - frontend-new
+      - backend
+    restart: unless-stopped
+    networks:
+      - steiner-network
+
+  frontend:
+    build: ./frontend
+    expose:
+      - "3000"
+    environment:
+      - API_URL=http://backend:8000
+    restart: unless-stopped
+    networks:
+      - steiner-network
+
+  frontend-new:
+    build: ./frontend-new
+    expose:
+      - "80"
+    restart: unless-stopped
+    networks:
+      - steiner-network
+
+  backend:
+    build: ./backend
+    expose:
+      - "8000"
+    environment:
+      - DATABASE_URL=${DB_URL:-postgresql+asyncpg://steiner:st3in3r_pass_2024@steiner-postgres:5432/steiner_reader}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - DEEPSEEK_BASE_URL=https://api.deepseek.com
+      - UPLOAD_DIR=/app/uploads
+      - TRANSLATION_ENGINE=${TRANSLATION_ENGINE:-google}
+    volumes:
+      - uploads:/app/uploads
+    depends_on: []
+    restart: unless-stopped
+    networks:
+      - steiner-network
+
+networks:
+  steiner-network:
+    external: true
+
+volumes:
+  uploads:
