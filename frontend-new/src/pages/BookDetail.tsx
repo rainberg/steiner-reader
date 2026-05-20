@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, BookOpen } from 'lucide-react';
 import { api } from '../lib/api';
-import type { Book, Lecture } from '../types';
+import type { Book, LectureSummary } from '../types';
 
 export default function BookDetail() {
   const { bookId } = useParams<{ bookId: string }>();
   const [book, setBook] = useState<Book | null>(null);
-  const [lectures, setLectures] = useState<Lecture[]>([]);
+  const [lectures, setLectures] = useState<LectureSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -29,10 +29,10 @@ export default function BookDetail() {
           lectures: [],
         });
         setLectures([
-          { id: 1, book_id: parseInt(bookId), title_de: 'Introduction', title_zh: '导言', order_index: 1, lecture_date: null, location: null, sentence_count: 120 },
-          { id: 2, book_id: parseInt(bookId), title_de: 'Knowledge of Freedom', title_zh: '自由的知识', order_index: 2, lecture_date: null, location: null, sentence_count: 200 },
-          { id: 3, book_id: parseInt(bookId), title_de: 'Moral Imagination', title_zh: '道德想象力', order_index: 3, lecture_date: null, location: null, sentence_count: 180 },
-          { id: 4, book_id: parseInt(bookId), title_de: 'Ethical Individualism', title_zh: '伦理个人主义', order_index: 4, lecture_date: null, location: null, sentence_count: 150 },
+          { id: 1, title_de: 'Introduction', title_zh: '导言', order_index: 1, lecture_date: null, location: null, sentence_count: 120, image_count: 0, translated_count: 0 },
+          { id: 2, title_de: 'Knowledge of Freedom', title_zh: '自由的知识', order_index: 2, lecture_date: null, location: null, sentence_count: 200, image_count: 0, translated_count: 0 },
+          { id: 3, title_de: 'Moral Imagination', title_zh: '道德想象力', order_index: 3, lecture_date: null, location: null, sentence_count: 180, image_count: 0, translated_count: 0 },
+          { id: 4, title_de: 'Ethical Individualism', title_zh: '伦理个人主义', order_index: 4, lecture_date: null, location: null, sentence_count: 150, image_count: 0, translated_count: 0 },
         ]);
       } finally {
         setIsLoading(false);

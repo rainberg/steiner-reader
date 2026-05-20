@@ -3,7 +3,7 @@ import { Search, Grid, Layers } from 'lucide-react';
 import BookCard from '../components/BookCard';
 import { useStore } from '../hooks/useStore';
 import { api } from '../lib/api';
-import type { BookSummary, BookGroup } from '../types';
+import type { BookSummary } from '../types';
 
 export default function Home() {
   const {
