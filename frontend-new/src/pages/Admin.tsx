@@ -11,7 +11,7 @@ export default function Admin() {
 
   if (!user || user.is_admin !== 1) {
     return (
-      <div className="min-h-screen pt-24 pb-16 flex items-center justify-center">
+      <div className="min-h-screen pt-6 pb-16 flex items-center justify-center">
         <div className="text-center">
           <p className="text-gray-500 text-lg mb-4">没有权限访问此页面</p>
           <Link
@@ -33,7 +33,7 @@ export default function Admin() {
   ];
 
   return (
-    <div className="min-h-screen pt-24 pb-16">
+    <div className="min-h-screen pt-6 pb-16">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         <Link
           to="/"
@@ -44,7 +44,7 @@ export default function Admin() {
         </Link>
 
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2 font-['Playfair_Display']">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2 font-display">
             管理后台
           </h1>
           <p className="text-gray-600">管理用户、积分和系统设置</p>

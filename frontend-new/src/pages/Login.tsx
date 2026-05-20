@@ -41,11 +41,11 @@ export default function Login() {
         <div className="text-center mb-8">
           <Link to="/" className="inline-flex items-center gap-2 justify-center mb-6">
             <BookOpen className="h-10 w-10 text-[#1e3a8a]" />
-            <span className="text-2xl font-bold text-[#1e3a8a] font-['Playfair_Display']">
+            <span className="text-2xl font-bold text-[#1e3a8a] font-display">
               Steiner Library
             </span>
           </Link>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2 font-['Playfair_Display']">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2 font-display">
             {isLogin ? '欢迎回来' : '创建账号'}
           </h1>
           <p className="text-gray-600">

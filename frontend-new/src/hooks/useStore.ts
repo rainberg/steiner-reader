@@ -4,6 +4,7 @@ import type { BookSummary, User } from '../types';
 interface AppState {
   user: User | null;
   setUser: (user: User | null) => void;
+  clearUser: () => void;
   books: BookSummary[];
   setBooks: (books: BookSummary[]) => void;
   isLoading: boolean;
@@ -17,6 +18,7 @@ interface AppState {
 export const useStore = create<AppState>((set) => ({
   user: null,
   setUser: (user) => set({ user }),
+  clearUser: () => set({ user: null }),
   books: [],
   setBooks: (books) => set({ books }),
   isLoading: false,

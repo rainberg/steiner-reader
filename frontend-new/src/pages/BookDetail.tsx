@@ -44,7 +44,7 @@ export default function BookDetail() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen pt-24 pb-16">
+      <div className="min-h-screen pt-6 pb-16">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="animate-pulse">
             <div className="h-8 bg-gray-200 rounded w-32 mb-8" />
@@ -66,14 +66,14 @@ export default function BookDetail() {
 
   if (!book) {
     return (
-      <div className="min-h-screen pt-24 pb-16 flex items-center justify-center">
+      <div className="min-h-screen pt-6 pb-16 flex items-center justify-center">
         <p className="text-gray-500 text-lg">书籍未找到</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen pt-24 pb-16">
+    <div className="min-h-screen pt-6 pb-16">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <Link
           to="/"
@@ -104,7 +104,7 @@ export default function BookDetail() {
             <span className="inline-block px-3 py-1 bg-[#e0e7ff] text-[#1e3a8a] text-sm rounded-full mb-4">
               {book.ga_number || 'GA'}
             </span>
-            <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4 font-['Playfair_Display']">
+            <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4 font-display">
               {book.title_de}
             </h1>
             {book.title_zh && (
@@ -117,7 +117,7 @@ export default function BookDetail() {
         </div>
 
         <div className="bg-white rounded-2xl shadow-sm p-6 md:p-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-6 font-['Playfair_Display']">
+          <h2 className="text-2xl font-bold text-gray-900 mb-6 font-display">
             章节列表
           </h2>
           {lectures.length > 0 ? (

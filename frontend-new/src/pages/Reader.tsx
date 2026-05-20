@@ -199,7 +199,7 @@ ${sentencesHtml}
 
   if (loading) {
     return (
-      <div className="min-h-screen pt-24 pb-16">
+      <div className="min-h-screen pt-6 pb-16">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="animate-pulse space-y-6">
             <div className="h-8 bg-gray-200 rounded w-32" />
@@ -229,7 +229,7 @@ ${sentencesHtml}
   const canEdit = isPublished && !!user;
 
   return (
-    <div className="min-h-screen pt-20 pb-16 bg-[#f8f5f0]">
+    <div className="min-h-screen pt-6 pb-16 bg-[#f8f5f0]">
       <div className="sticky top-16 bg-white/90 backdrop-blur-md border-b border-gray-100 z-10">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5">
           <div className="flex items-center justify-between flex-wrap gap-2">
@@ -275,7 +275,7 @@ ${sentencesHtml}
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="mb-8">
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-900 leading-tight font-['Playfair_Display']">
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900 leading-tight font-display">
             {lecture.title_de || 'Vortrag'}
           </h1>
           {lecture.title_zh && (

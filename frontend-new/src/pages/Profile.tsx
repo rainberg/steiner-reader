@@ -142,7 +142,7 @@ export default function Profile() {
 
   if (loading || !user) {
     return (
-      <div className="min-h-screen pt-24 pb-16 flex items-center justify-center">
+      <div className="min-h-screen pt-6 pb-16 flex items-center justify-center">
         <div className="text-gray-400 text-sm">加载中...</div>
       </div>
     );
@@ -151,7 +151,7 @@ export default function Profile() {
   const inputClass = "w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#1e3a8a] focus:border-transparent transition-all";
 
   return (
-    <div className="min-h-screen pt-24 pb-16">
+    <div className="min-h-screen pt-6 pb-16">
       <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8">
         <Link
           to="/"
@@ -161,7 +161,7 @@ export default function Profile() {
           返回首页
         </Link>
 
-        <h1 className="text-2xl font-bold text-gray-900 mb-6 font-['Playfair_Display']">个人中心</h1>
+        <h1 className="text-2xl font-bold text-gray-900 mb-6 font-display">个人中心</h1>
 
         <div className="bg-white rounded-2xl shadow-lg p-8 mb-6">
           <h2 className="text-lg font-semibold text-gray-800 mb-4">用户信息</h2>

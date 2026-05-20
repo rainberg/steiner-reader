@@ -126,11 +126,11 @@ export default function Home() {
   }, [books]);
 
   return (
-    <div className="min-h-screen pt-24 pb-16">
+    <div className="min-h-screen pt-6 pb-16">
       {/* Hero Section */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-16">
         <div className="text-center max-w-3xl mx-auto">
-          <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-gray-900 mb-6 font-['Playfair_Display']">
+          <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-gray-900 mb-6 font-display">
             施泰纳著作库
           </h1>
           <p className="text-lg text-gray-600 mb-8">
@@ -205,7 +205,7 @@ export default function Home() {
         ) : viewMode === 'group' && !searchQuery ? (
           Object.entries(groupedBooks).map(([category, categoryBooks]) => (
             <div key={category} className="mb-12">
-              <h2 className="text-2xl font-bold text-gray-900 mb-6 font-['Playfair_Display']">
+              <h2 className="text-2xl font-bold text-gray-900 mb-6 font-display">
                 {category}
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">

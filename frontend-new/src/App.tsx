@@ -11,7 +11,7 @@ import Upload from './pages/Upload';
 
 function App() {
   return (
-    <Router>
+    <Router basename="/v2">
       <div className="min-h-screen bg-[#f8f5f0]">
         <Navbar />
         <Routes>

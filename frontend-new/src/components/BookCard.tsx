@@ -20,7 +20,7 @@ export default function BookCard({ book }: BookCardProps) {
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
-            <div className="text-[#1e3a8a] text-4xl font-['Playfair_Display'] opacity-30">
+            <div className="text-[#1e3a8a] text-4xl font-display opacity-30">
               {book.ga_number || book.title_de.charAt(0)}
             </div>
           </div>

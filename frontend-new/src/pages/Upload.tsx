@@ -19,7 +19,7 @@ export default function Upload() {
 
   if (!user || user.is_admin !== 1) {
     return (
-      <div className="min-h-screen pt-24 pb-16 flex items-center justify-center">
+      <div className="min-h-screen pt-6 pb-16 flex items-center justify-center">
         <div className="text-center">
           <p className="text-gray-500 text-lg mb-4">没有权限访问此页面</p>
           <Link
@@ -101,7 +101,7 @@ export default function Upload() {
   };
 
   return (
-    <div className="min-h-screen pt-24 pb-16">
+    <div className="min-h-screen pt-6 pb-16">
       <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8">
         <Link
           to="/admin"
@@ -112,7 +112,7 @@ export default function Upload() {
         </Link>
 
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2 font-['Playfair_Display']">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2 font-display">
             上传书籍
           </h1>
           <p className="text-gray-600">支持 EPUB、DOCX 和 PDF 格式，文件会自动解析章节、段落和句子结构。</p>
