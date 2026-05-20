@@ -48,6 +48,7 @@ export interface Lecture {
   image_count?: number;
   paragraphs?: Paragraph[];
   is_published?: boolean;
+  contributors?: ContributionDisplay[];
   can_download_pdf?: boolean;
   can_edit?: boolean;
   download_notice?: string;
@@ -100,4 +101,121 @@ export interface User {
   credits: number;
   is_admin?: number;
   created_at?: string;
+}
+
+export interface AuthResponse {
+  access_token: string;
+  token_type: string;
+  user: User;
+}
+
+export interface TranslationCost {
+  lecture_id: number;
+  total: number;
+  translated: number;
+  remaining: number;
+  cost: number;
+  already_translated: boolean;
+  is_published: boolean;
+  user_credits: number | null;
+  can_afford: boolean | null;
+}
+
+export interface TranslationStatus {
+  lecture_id: number;
+  total: number;
+  translated: number;
+  completed: boolean;
+  is_translating?: boolean;
+}
+
+export interface TranslateResult {
+  lecture_id: number;
+  status: string;
+  message: string;
+  cost?: number;
+  credits?: number;
+  translated: number;
+  total: number;
+}
+
+export interface LectureImage {
+  id: number;
+  lecture_id?: number;
+  filename: string;
+  url: string;
+  page_number?: number;
+  width?: number;
+  height?: number;
+  after_paragraph_id?: number | null;
+  paragraph_index?: number | null;
+}
+
+export interface UploadResponse {
+  book_id?: number;
+  message: string;
+  ga_number?: string | null;
+  chapters?: number;
+  stats?: Record<string, number>;
+}
+
+export interface DownloadPermission {
+  has_permission: boolean;
+  access_types: string[];
+}
+
+export interface PurchaseResult {
+  success: boolean;
+  credits_remaining: number;
+  message: string;
+}
+
+export interface EditSentenceRequest {
+  field: 'text_de' | 'text_zh';
+  new_value: string;
+}
+
+export interface EditSentenceResult {
+  success: boolean;
+  new_text: string;
+  cost: number;
+  credits_remaining: number;
+}
+
+export interface EditLogEntry {
+  id: number;
+  user_id: number;
+  username: string;
+  sentence_id: number;
+  field_changed: string;
+  old_value: string | null;
+  new_value: string | null;
+  credits_cost: number;
+  created_at: string;
+}
+
+export interface ContributionDisplay {
+  username: string;
+  contribution_type: string;
+  created_at: string;
+}
+
+export interface CreditSetting {
+  id: number;
+  key: string;
+  value: number;
+  description: string | null;
+  updated_at: string | null;
+}
+
+export interface CreditTransaction {
+  id: number;
+  user_id: number;
+  amount: number;
+  balance_after: number;
+  transaction_type: string;
+  reference_type: string | null;
+  reference_id: number | null;
+  description: string | null;
+  created_at: string;
 }

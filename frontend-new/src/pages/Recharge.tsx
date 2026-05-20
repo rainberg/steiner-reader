@@ -1,13 +1,111 @@
-import { Link } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowLeft, QrCode, Upload, Clock, CheckCircle, XCircle, ImagePlus } from 'lucide-react';
+import { getStoredUser } from '../lib/api';
+
+interface RechargeRequest {
+  id: number;
+  amount: number;
+  status: string;
+  admin_note: string | null;
+  created_at: string;
+  updated_at: string | null;
+}
 
 export default function Recharge() {
-  const packages = [
-    { id: 1, credits: 100, price: '¥9.90', popular: false },
-    { id: 2, credits: 500, price: '¥39.90', popular: true },
-    { id: 3, credits: 1000, price: '¥69.90', popular: false },
-    { id: 4, credits: 3000, price: '¥169.90', popular: false },
-  ];
+  const navigate = useNavigate();
+  const [amount, setAmount] = useState('');
+  const [image, setImage] = useState<File | null>(null);
+  const [preview, setPreview] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [error, setError] = useState('');
+  const [history, setHistory] = useState<RechargeRequest[]>([]);
+
+  useEffect(() => {
+    const u = getStoredUser();
+    if (!u) {
+      navigate('/login');
+      return;
+    }
+    loadHistory();
+  }, [navigate]);
+
+  const loadHistory = async () => {
+    const token = localStorage.getItem('steiner_token');
+    try {
+      const res = await fetch('/api/recharge/my-requests', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) setHistory(await res.json());
+    } catch {}
+  };
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImage(file);
+    setPreview(URL.createObjectURL(file));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setMsg('');
+    const amt = parseInt(amount, 10);
+    if (!amt || amt <= 0) {
+      setError('请输入有效金额');
+      return;
+    }
+    if (!image) {
+      setError('请上传付款凭证');
+      return;
+    }
+
+    setLoading(true);
+    const token = localStorage.getItem('steiner_token');
+    try {
+      const formData = new FormData();
+      formData.append('amount', String(amt));
+      formData.append('payment_image', image);
+
+      const res = await fetch('/api/recharge/submit', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMsg(data.message);
+        setAmount('');
+        setImage(null);
+        setPreview('');
+        loadHistory();
+      } else {
+        setError(data.detail || '提交失败');
+      }
+    } catch {
+      setError('网络错误');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const statusLabel = (s: string) =>
+    s === 'pending' ? '待审核' : s === 'approved' ? '已通过' : '已拒绝';
+
+  const statusIcon = (s: string) => {
+    if (s === 'pending') return <Clock className="h-3.5 w-3.5" />;
+    if (s === 'approved') return <CheckCircle className="h-3.5 w-3.5" />;
+    return <XCircle className="h-3.5 w-3.5" />;
+  };
+
+  const statusClass = (s: string) =>
+    s === 'pending'
+      ? 'bg-amber-50 text-amber-700'
+      : s === 'approved'
+        ? 'bg-emerald-50 text-emerald-700'
+        : 'bg-red-50 text-red-700';
 
   return (
     <div className="min-h-screen pt-24 pb-16">
@@ -22,45 +120,138 @@ export default function Recharge() {
 
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2 font-['Playfair_Display']">
-            充值积分
+            充值申请
           </h1>
-          <p className="text-gray-600">获取更多积分，体验完整翻译功能</p>
+          <p className="text-gray-600">扫描收款码付款后提交充值申请</p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {packages.map((pkg) => (
-          <button
-            key={pkg.id}
-            className={`relative p-6 rounded-2xl border-2 transition-all ${
-              pkg.popular
-                ? 'border-[#1e3a8a] bg-[#1e3a8a]/5'
-                : 'border-gray-200 hover:border-[#1e3a8a]/30 hover:bg-[#1e3a8a]/5'
-            }`}
-          >
-            {pkg.popular && (
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                <span className="bg-[#d4a574] text-white text-xs px-3 py-1 rounded-full">
-                  推荐
-                </span>
-              </div>
-            )}
-            <div className="text-center">
-              <div className="text-3xl font-bold text-[#1e3a8a] mb-2">
-                {pkg.credits}
-              </div>
-              <div className="text-sm text-gray-500 mb-4">积分</div>
-              <div className="text-2xl font-bold text-gray-900">
-                {pkg.price}
-              </div>
+        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 text-center">
+          <div className="flex items-center justify-center gap-2 mb-4">
+            <QrCode className="h-5 w-5 text-[#1e3a8a]" />
+            <h2 className="text-sm font-semibold text-gray-700">请扫描收款码完成付款</h2>
+          </div>
+          <img
+            src="/api/recharge/payment-qr"
+            alt="收款码"
+            className="max-w-xs mx-auto rounded-xl border border-gray-200 shadow-sm"
+            onError={(e) => {
+              (e.target as HTMLImageElement).style.display = 'none';
+            }}
+          />
+          <p className="text-xs text-gray-400 mt-3">若未显示收款码，请联系管理员</p>
+        </div>
+
+        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Upload className="h-5 w-5 text-[#1e3a8a]" />
+            <h2 className="text-sm font-semibold text-gray-700">填写充值信息</h2>
+          </div>
+
+          {error && (
+            <div className="bg-red-50 text-red-600 text-sm px-4 py-3 rounded-xl mb-4">
+              {error}
             </div>
-          </button>
-          ))}
+          )}
+          {msg && (
+            <div className="bg-emerald-50 text-emerald-600 text-sm px-4 py-3 rounded-xl mb-4">
+              {msg}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                充值金额
+              </label>
+              <input
+                type="number"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="输入充值金额"
+                required
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#1e3a8a] focus:border-transparent transition-all"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                上传付款凭证
+              </label>
+              <div className="relative">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageChange}
+                  required
+                  className="w-full text-sm text-gray-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-medium file:bg-[#1e3a8a]/10 file:text-[#1e3a8a] hover:file:bg-[#1e3a8a]/20 transition-all"
+                />
+              </div>
+              {preview && (
+                <div className="mt-3 relative inline-block">
+                  <img
+                    src={preview}
+                    alt="预览"
+                    className="max-w-xs rounded-xl border border-gray-200 shadow-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImage(null);
+                      setPreview('');
+                    }}
+                    className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600 transition-colors"
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3 bg-[#1e3a8a] text-white rounded-xl font-medium hover:bg-[#1e3a8a]/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? '提交中...' : '提交申请'}
+            </button>
+          </form>
         </div>
 
-        <div className="mt-8">
-          <button className="w-full py-4 bg-[#1e3a8a] text-white rounded-xl font-medium hover:bg-[#1e3a8a]/90 transition-colors">
-            立即充值
-          </button>
+        <div className="bg-white rounded-2xl shadow-lg p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <ImagePlus className="h-5 w-5 text-[#1e3a8a]" />
+            <h2 className="text-sm font-semibold text-gray-700">申请记录</h2>
+          </div>
+          {history.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-4">暂无申请记录</p>
+          ) : (
+            <div className="space-y-2">
+              {history.map((r) => (
+                <div
+                  key={r.id}
+                  className="flex items-center justify-between py-3 px-4 border-b border-gray-100 last:border-0"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-gray-700 font-medium text-sm">
+                      {r.amount} 点
+                    </span>
+                    <span
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${statusClass(r.status)}`}
+                    >
+                      {statusIcon(r.status)}
+                      {statusLabel(r.status)}
+                    </span>
+                    {r.admin_note && (
+                      <span className="text-gray-400 text-xs">{r.admin_note}</span>
+                    )}
+                  </div>
+                  <span className="text-gray-400 text-xs">
+                    {new Date(r.created_at).toLocaleDateString('zh-CN')}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
