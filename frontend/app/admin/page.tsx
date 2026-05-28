@@ -170,7 +170,7 @@ export default function AdminPage() {
     }
     try {
       const data = await adminResetPassword(resetModal.user.id, newPassword);
-      setSuccess(data.message);
+      setSuccess(data.message || "密码已重置");
       setResetModal(null);
       setNewPassword("");
     } catch (err: any) {
@@ -638,7 +638,7 @@ function CreditSettingsTab({
             {settings.map((s) => (
               <tr key={s.key} className="hover:bg-gray-50">
                 <td className="px-6 py-4 text-sm font-medium text-gray-900">{s.key}</td>
-                <td className="px-6 py-4 text-sm text-gray-500">{LABELS[s.key] || s.description}</td>
+                <td className="px-6 py-4 text-sm text-gray-500">{LABELS[s.key || ""] || s.description}</td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <span className="text-sm font-mono text-gray-700">{s.value}</span>
                 </td>
@@ -651,12 +651,12 @@ function CreditSettingsTab({
                         onChange={e => setEditValue(e.target.value)}
                         className="w-20 px-2 py-1 border rounded text-sm"
                       />
-                      <button onClick={() => handleSave(s.key)} className="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700">保存</button>
+                      <button onClick={() => handleSave(s.key || "")} className="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700">保存</button>
                       <button onClick={() => setEditingKey(null)} className="px-2 py-1 text-gray-500 text-xs">取消</button>
                     </div>
                   ) : (
                     <button
-                      onClick={() => { setEditingKey(s.key); setEditValue(String(s.value)); }}
+                      onClick={() => { setEditingKey(s.key || null); setEditValue(String(s.value)); }}
                       className="text-blue-600 hover:text-blue-800 text-sm"
                     >
                       修改

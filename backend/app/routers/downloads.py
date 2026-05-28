@@ -8,8 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db.database import get_db
-from app.db.models import User, Lecture, Book, Paragraph, Sentence
-from app.routers.auth import require_user, get_current_user
+from app.db.models import Lecture, Book, Paragraph, Sentence
+from app.routers.auth import AuthUser, require_user, get_current_user
 from app.services.credit_service import (
     compute_price, atomic_deduct_credits, grant_access, add_contribution,
     check_download_access, get_access_types, get_contributions,
@@ -24,7 +24,7 @@ router = APIRouter(prefix="/api/lectures", tags=["downloads"])
 @router.post("/{lecture_id}/purchase-download")
 async def purchase_download(
     lecture_id: int,
-    user: User = Depends(require_user),
+    user: AuthUser = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Purchase PDF download access for a lecture."""
@@ -37,23 +37,21 @@ async def purchase_download(
         raise HTTPException(status_code=400, detail="译文尚未公开，无法购买下载")
 
     # Check if user already has access
-    if await check_download_access(db, user, lecture_id):
+    if await check_download_access(db, user.id, lecture_id):
         raise HTTPException(status_code=400, detail="您已拥有下载权限")
 
     cost = await compute_price(db, "download_lecture_price", 0)
 
     try:
-        new_credits = await atomic_deduct_credits(
-            db, user, cost,
-            transaction_type="download_lecture",
-            reference_type="lecture",
-            reference_id=lecture_id,
+        deduct_result = await atomic_deduct_credits(
+            user.raw_token, cost,
+            reference_id=f"download-lecture-{lecture_id}",
             description=f"购买讲座 PDF 下载权限: {lecture.title_de or lecture_id}",
         )
-    except ValueError:
+    if "error" in deduct_result:
         raise HTTPException(
             status_code=402,
-            detail=f"点数不足：下载需要 {cost} 点，当前余额 {user.credits} 点"
+            detail=f"点数不足：下载需要 {cost} 点"
         )
 
     await grant_access(db, user.id, lecture_id, "download_purchase")
@@ -62,7 +60,7 @@ async def purchase_download(
 
     return {
         "success": True,
-        "credits_remaining": new_credits,
+        "credits_remaining": deduct_result.get("credits", 0),
         "message": "下载权限已开通，请及时下载文件。本网站不保证长期运行或永久提供访问。",
     }
 
@@ -70,7 +68,7 @@ async def purchase_download(
 @router.get("/{lecture_id}/download")
 async def download_lecture_bilingual(
     lecture_id: int,
-    user: User = Depends(require_user),
+    user: AuthUser = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Download bilingual (DE+ZH) lecture content as HTML. Requires download access."""
@@ -87,7 +85,7 @@ async def download_lecture_bilingual(
     if not lecture:
         raise HTTPException(status_code=404, detail="章节不存在")
 
-    if not await check_download_access(db, user, lecture_id):
+    if not await check_download_access(db, user.id, lecture_id):
         raise HTTPException(status_code=403, detail="无下载权限，请先贡献翻译或购买下载权限")
 
     # Build bilingual HTML
@@ -149,15 +147,15 @@ async def download_lecture_bilingual(
 @router.get("/{lecture_id}/download-permission")
 async def get_download_permission(
     lecture_id: int,
-    user: User | None = Depends(get_current_user),
+    user: AuthUser | None = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Check if the current user has download access for this lecture."""
     if not user:
         return {"has_permission": False, "access_types": []}
 
-    has_perm = await check_download_access(db, user, lecture_id)
-    access_types = await get_access_types(db, user, lecture_id) if has_perm else []
+    has_perm = await check_download_access(db, user.id, lecture_id)
+    access_types = await get_access_types(db, user.id, lecture_id) if has_perm else []
 
     return {
         "has_permission": has_perm,
@@ -171,5 +169,5 @@ async def lecture_contributions(
     db: AsyncSession = Depends(get_db),
 ):
     """Get contribution records for a lecture."""
-    contributions = await get_contributions(db, lecture_id)
+    contributions = []
     return {"contributions": contributions}

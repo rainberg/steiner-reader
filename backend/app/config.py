@@ -8,29 +8,20 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://steiner:change_me@localhost:5432/steiner_reader"
 
     # Translation (Google Translate -- free, no API key needed)
-    TRANSLATION_ENGINE: str = "google"  # google or deepseek
+    TRANSLATION_ENGINE: str = "google"
 
-    # Auth
-    JWT_SECRET_KEY: str = "change-me-in-env"
-    JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7
+    # Auth Service
+    AUTH_SERVICE_URL: str = "https://auth.3mudi.com"
+    AUTH_APP_NAME: str = "steiner"
 
     # File storage
     UPLOAD_DIR: str = "/opt/steiner-reader/uploads"
-
-    # Credit pricing — per-sentence coefficient (overridden by credit_settings table)
-    CREDIT_TRANSLATE_COEFFICIENT: float = 1.0
-    CREDIT_EDIT_TRANSLATION_COEFFICIENT: float = 0.5
-    CREDIT_EDIT_SOURCE_COEFFICIENT: float = 0.5
-    CREDIT_DOWNLOAD_LECTURE_PRICE: int = 0
-    CREDIT_DOWNLOAD_BOOK_PRICE: int = 0
 
     # App
     APP_NAME: str = "Steiner Reader"
     DEBUG: bool = False
 
-    class Config:
-        env_file = ".env"
+    model_config = {"env_file": ".env", "extra": "ignore"}
 
 
 settings = Settings()

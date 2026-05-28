@@ -12,8 +12,8 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
-from app.db.models import User, RechargeRequest, CreditTransaction, CreditSetting
-from app.routers.auth import require_user, require_admin
+from app.db.models import RechargeRequest, CreditTransaction, CreditSetting
+from app.routers.auth import AuthUser, require_user, require_admin
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -82,7 +82,7 @@ async def recharge_info(db: AsyncSession = Depends(get_db)):
 async def submit_recharge(
     amount: int = Form(...),
     payment_image: UploadFile = File(...),
-    user: User = Depends(require_user),
+    user: AuthUser = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Submit a recharge application. amount is in RMB yuan. Credits = amount × coefficient."""
@@ -152,7 +152,7 @@ async def submit_recharge(
 
 @router.get("/my-requests")
 async def my_recharge_requests(
-    user: User = Depends(require_user),
+    user: AuthUser = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Get current user's recharge request history."""
@@ -183,7 +183,7 @@ async def my_recharge_requests(
 @router.post("/admin/upload-qr")
 async def upload_payment_qr(
     qr_image: UploadFile = File(...),
-    admin: User = Depends(require_admin),
+    admin: AuthUser = Depends(require_admin),
 ):
     """Admin uploads payment QR code for users to scan."""
     content = await qr_image.read()
@@ -194,13 +194,13 @@ async def upload_payment_qr(
 
 @router.get("/admin/pending-requests")
 async def admin_pending_requests(
-    admin: User = Depends(require_admin),
+    admin: AuthUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Get all recharge requests for admin review. Optional status filter."""
     result = await db.execute(
-        select(RechargeRequest, User.username)
-        .join(User, RechargeRequest.user_id == User.id)
+        select(RechargeRequest)
+        
         .order_by(
             RechargeRequest.status == "pending",
             RechargeRequest.created_at.desc()
@@ -212,7 +212,7 @@ async def admin_pending_requests(
         {
             "id": r.id,
             "user_id": r.user_id,
-            "username": username,
+            "username": "",
             "amount": r.amount,
             "coefficient": r.coefficient,
             "credits": r.amount * (r.coefficient or 10),
@@ -222,7 +222,7 @@ async def admin_pending_requests(
             "created_at": r.created_at,
             "updated_at": r.updated_at,
         }
-        for r, username in rows
+        for r in rows
     ]
 
 
@@ -230,20 +230,19 @@ async def admin_pending_requests(
 async def admin_review_request(
     request_id: int,
     review: RechargeReviewRequest,
-    admin: User = Depends(require_admin),
+    admin: AuthUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Admin approves or rejects a recharge request. Adds credits on approval."""
     result = await db.execute(
-        select(RechargeRequest, User)
-        .join(User, RechargeRequest.user_id == User.id)
+        select(RechargeRequest)
         .where(RechargeRequest.id == request_id)
     )
     row = result.one_or_none()
     if not row:
         raise HTTPException(status_code=404, detail="申请不存在")
 
-    req, user = row
+    req = row
     if req.status != "pending":
         raise HTTPException(status_code=400, detail="该申请已处理过")
 
@@ -272,7 +271,7 @@ async def admin_review_request(
         await db.commit()
         return {
             "success": True,
-            "message": f"已批准，用户 {user.username} 充值 {req.amount} 元获得 {credits} 积分 (余额 {user.credits})",
+            "message": f"已批准，用户 {user.display_name} 充值 {req.amount} 元获得 {credits} 积分 (余额 {user.credits})",
             "old_credits": old_credits,
             "new_credits": user.credits,
             "amount_yuan": req.amount,

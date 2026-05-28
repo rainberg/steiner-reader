@@ -10,10 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
 from app.db.models import (
-    User, Sentence, Paragraph, Lecture, EditAuditLog,
-    SentenceRevision, RevisionVote, CreditTransaction,
+    Sentence, Paragraph, Lecture, EditAuditLog,
+    SentenceRevision, RevisionVote,
 )
-from app.routers.auth import require_user, require_admin
+from app.routers.auth import AuthUser, require_user, require_admin
 from app.services.credit_service import (
     compute_price, atomic_deduct_credits, add_contribution, grant_access,
 )
@@ -28,7 +28,7 @@ router = APIRouter(prefix="/api/sentences", tags=["edits"])
 async def submit_revision(
     sentence_id: int,
     req: EditSentenceRequest,
-    user: User = Depends(require_user),
+    user: AuthUser = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Submit a revision. Creates a new revision entry (not direct update)."""
@@ -52,14 +52,12 @@ async def submit_revision(
     cost = await compute_price(db, price_key, 1)
 
     try:
-        new_credits = await atomic_deduct_credits(
-            db, user, cost,
-            transaction_type=f"edit_{'source' if req.field == 'text_de' else 'translation'}",
-            reference_type="sentence",
-            reference_id=sentence_id,
+        deduct_result = await atomic_deduct_credits(
+            user.raw_token, cost,
+            reference_id=f"edit-sentence-{sentence_id}",
             description=f"修订句子 #{sentence_id}",
         )
-    except ValueError:
+    if "error" in deduct_result:
         raise HTTPException(
             status_code=402,
             detail=f"点数不足，需要 {cost} 点"
@@ -108,7 +106,7 @@ async def submit_revision(
         success=True,
         new_text=req.new_value,
         cost=cost,
-        credits_remaining=new_credits,
+        credits_remaining=deduct_result.get("credits", 0),
     )
 
 
@@ -116,7 +114,7 @@ async def submit_revision(
 async def vote_revision(
     sentence_id: int,
     revision_id: int,
-    user: User = Depends(require_user),
+    user: AuthUser = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Vote for a revision. Costs same credits as submitting a revision."""
@@ -149,11 +147,9 @@ async def vote_revision(
     cost = await compute_price(db, price_key, 1)
 
     try:
-        new_credits = await atomic_deduct_credits(
-            db, user, cost,
-            transaction_type="revision_vote",
-            reference_type="revision",
-            reference_id=revision_id,
+        deduct_result = await atomic_deduct_credits(
+            user.raw_token, cost,
+            reference_id=f"vote-revision-{revision_id}",
             description=f"投票修订 #{revision_id}",
         )
     except ValueError:
@@ -163,14 +159,14 @@ async def vote_revision(
     rev.vote_count = (rev.vote_count or 0) + 1
     await db.commit()
 
-    return {"success": True, "vote_count": rev.vote_count, "credits_remaining": new_credits}
+    return {"success": True, "vote_count": rev.vote_count, "credits_remaining": deduct_result.get("credits", 0)}
 
 
 @router.post("/{sentence_id}/revisions/{revision_id}/reject")
 async def reject_revision(
     sentence_id: int,
     revision_id: int,
-    admin: User = Depends(require_admin),
+    admin: AuthUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Admin rejects a revision (hides it from voting)."""
@@ -195,8 +191,7 @@ async def get_revisions(
 ):
     """Get all active revisions for a sentence, sorted by votes."""
     result = await db.execute(
-        select(SentenceRevision, User.username)
-        .join(User, SentenceRevision.user_id == User.id)
+        select(SentenceRevision)
         .where(
             SentenceRevision.sentence_id == sentence_id,
             SentenceRevision.status == "active",
@@ -210,11 +205,11 @@ async def get_revisions(
             "field": r.field,
             "new_value": r.new_value,
             "user_id": r.user_id,
-            "username": username,
+            "username": "",
             "vote_count": r.vote_count or 0,
             "created_at": r.created_at,
         }
-        for r, username in rows
+        for r in rows
     ]
 
 
@@ -225,8 +220,7 @@ async def get_sentence_edits(
 ):
     """Get edit history for a sentence."""
     result = await db.execute(
-        select(EditAuditLog, User.username)
-        .join(User, EditAuditLog.user_id == User.id)
+        select(EditAuditLog)
         .where(EditAuditLog.sentence_id == sentence_id)
         .order_by(EditAuditLog.created_at.desc())
     )
@@ -243,5 +237,5 @@ async def get_sentence_edits(
             credits_cost=row.credits_cost,
             created_at=row.created_at,
         )
-        for row, username in rows
+        for row in rows
     ]

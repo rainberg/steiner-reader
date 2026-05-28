@@ -1,54 +1,82 @@
-"""Admin router — user management, credit administration, and admin tools."""
+"""Admin router — user/credits management via Auth Service, Steiner-specific admin tools."""
 
-from datetime import datetime
+import logging
+from decimal import Decimal
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db.database import get_db
-from app.db.models import User, CreditSetting, CreditTransaction, TranslationFix, Book, Lecture
-from app.routers.auth import require_admin, pwd_context
-import re
+from app.db.models import (
+    Book,
+    Lecture,
+    Sentence,
+    Paragraph,
+    TranslationFix,
+    CreditSetting,
+)
+from app.routers.auth import AuthUser, require_admin
 from .admin_translation_utils import admin_retranslate_lecture
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
+logger = logging.getLogger(__name__)
 
-# --- Schemas ---
-
-class UserListItem(BaseModel):
-    id: int
-    username: str
-    email: str
-    credits: int
-    is_admin: int
-    created_at: datetime
-    
-    class Config:
-        from_attributes = True
+AUTH_BASE = settings.AUTH_SERVICE_URL
 
 
-class UpdateCreditsRequest(BaseModel):
-    credits: int
+async def _proxy_auth(method: str, path: str, token: str, payload: Optional[dict] = None, params: Optional[dict] = None) -> dict:
+    async with httpx.AsyncClient(timeout=15) as client:
+        try:
+            resp = await client.request(
+                method,
+                f"{AUTH_BASE}{path}",
+                headers={"Authorization": f"Bearer {token}"},
+                json=payload,
+                params=params,
+            )
+            if resp.status_code == 200:
+                return resp.json()
+            try:
+                detail = resp.json().get("detail", resp.text)
+            except Exception:
+                detail = resp.text
+            logger.error("Auth-service %s %s returned %s: %s", method, path, resp.status_code, detail)
+            raise HTTPException(status_code=resp.status_code, detail=f"Auth Service 错误: {detail}")
+        except httpx.HTTPError as exc:
+            logger.error("Auth-service %s %s request failed: %s", method, path, exc)
+            raise HTTPException(status_code=502, detail=f"Auth Service 不可用: {exc}")
 
 
-class UserListResponse(BaseModel):
-    users: list[UserListItem]
-    total: int
+# ---------------------------------------------------------------------------
+# Request / Response models
+# ---------------------------------------------------------------------------
+
+class AddCreditsRequest(BaseModel):
+    amount: Decimal
+    remark: Optional[str] = None
+
+
+class SetCreditsRequest(BaseModel):
+    credits: Decimal
+    remark: Optional[str] = None
+
+
+class ToggleRoleRequest(BaseModel):
+    role: str
 
 
 class RetranslateRequest(BaseModel):
-    """Request model for admin re-translation."""
     clear_existing: bool = True
-    """If True, clear existing translations before translating"""
     force_all: bool = False
-    """If True, translate all sentences (even those already translated)"""
 
 
 class RetranslateResponse(BaseModel):
-    """Response model for admin re-translation."""
     lecture_id: int
     total: int
     already_translated: int
@@ -60,7 +88,6 @@ class RetranslateResponse(BaseModel):
 
 
 class LectureTranslationStats(BaseModel):
-    """Statistics about lecture translation."""
     lecture_id: int
     total_sentences: int
     translated_sentences: int
@@ -68,256 +95,310 @@ class LectureTranslationStats(BaseModel):
     translation_ratio: float
 
 
-# --- User Management Endpoints ---
+class TranslationFixCreate(BaseModel):
+    pattern: str
+    replacement: str
+    enabled: bool = True
 
-@router.get("/users", response_model=UserListResponse)
+
+class TranslationFixUpdate(BaseModel):
+    pattern: Optional[str] = None
+    replacement: Optional[str] = None
+    enabled: Optional[bool] = None
+
+
+class BookTitleUpdate(BaseModel):
+    title_zh: Optional[str] = None
+
+
+class LectureTitleUpdate(BaseModel):
+    title_zh: Optional[str] = None
+
+
+class CreditSettingCreate(BaseModel):
+    action: str
+    price: Decimal
+    description: Optional[str] = None
+
+
+class CreditSettingUpdate(BaseModel):
+    price: Optional[Decimal] = None
+    description: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# User management — proxied to auth-service
+# ---------------------------------------------------------------------------
+
+@router.get("/users")
 async def list_users(
-    admin: User = Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
+    admin: AuthUser = Depends(require_admin),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    search: str = Query(""),
 ):
-    """List all users with their credit balances."""
-    result = await db.execute(
-        select(User).order_by(User.created_at.desc())
-    )
-    users = result.scalars().all()
-    
-    return UserListResponse(
-        users=[UserListItem.model_validate(u) for u in users],
-        total=len(users),
-    )
+    params = {"page": page, "page_size": page_size}
+    if search:
+        params["search"] = search
+    return await _proxy_auth("GET", "/api/admin/users", admin.raw_token, params=params)
 
 
 @router.put("/users/{user_id}/credits")
-async def update_user_credits(
-    user_id: int,
-    req: UpdateCreditsRequest,
-    admin: User = Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
+async def set_user_credits(
+    user_id: str,
+    req: SetCreditsRequest,
+    admin: AuthUser = Depends(require_admin),
 ):
-    """Set a user's credit balance."""
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-
-    if not user:
-        raise HTTPException(404, "用户不存在")
-
-    if req.credits < 0:
-        raise HTTPException(400, "点数不能为负数")
-
-    old_credits = user.credits
-    diff = req.credits - old_credits
-    user.credits = req.credits
-
-    # Log transaction
-    db.add(CreditTransaction(
-        user_id=user.id,
-        amount=diff,
-        balance_after=req.credits,
-        transaction_type="admin_set",
-        description=f"管理员 {admin.username} 设置积分为 {req.credits} (变动 {diff:+d})",
-    ))
-    await db.commit()
-    await db.refresh(user)
-
-    return {
-        "success": True,
-        "user_id": user.id,
-        "username": user.username,
-        "old_credits": old_credits,
-        "new_credits": user.credits,
-    }
+    payload = {"credits": str(req.credits), "remark": req.remark or ""}
+    return await _proxy_auth("PUT", f"/api/admin/users/{user_id}/credits", admin.raw_token, payload=payload)
 
 
 @router.post("/users/{user_id}/add-credits")
 async def add_user_credits(
-    user_id: int,
-    req: UpdateCreditsRequest,
-    admin: User = Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    """Add credits to a user's balance."""
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-
-    if not user:
-        raise HTTPException(404, "用户不存在")
-
-    user.credits += req.credits
-    db.add(CreditTransaction(
-        user_id=user.id,
-        amount=req.credits,
-        balance_after=user.credits,
-        transaction_type="admin_add",
-        description=f"管理员 {admin.username} 充值 {req.credits} 点",
-    ))
-    await db.commit()
-    await db.refresh(user)
-
-    return {
-        "success": True,
-        "user_id": user.id,
-        "username": user.username,
-        "added": req.credits,
-        "new_credits": user.credits,
-    }
-
-
-class AddCreditsRequest(BaseModel):
-    amount: int
-
-
-@router.post("/users/{user_id}/credits/add")
-async def add_user_credits_v2(
-    user_id: int,
+    user_id: str,
     req: AddCreditsRequest,
-    admin: User = Depends(require_admin),
+    admin: AuthUser = Depends(require_admin),
+):
+    payload = {"amount": str(req.amount), "remark": req.remark or ""}
+    return await _proxy_auth("POST", f"/api/admin/users/{user_id}/add-credits", admin.raw_token, payload=payload)
+
+
+@router.put("/users/{user_id}/toggle-active")
+async def toggle_user_active(
+    user_id: str,
+    admin: AuthUser = Depends(require_admin),
+):
+    return await _proxy_auth("PUT", f"/api/admin/users/{user_id}/toggle-active", admin.raw_token)
+
+
+@router.put("/users/{user_id}/role")
+async def set_user_role(
+    user_id: str,
+    req: ToggleRoleRequest,
+    admin: AuthUser = Depends(require_admin),
+):
+    payload = {"role": req.role}
+    return await _proxy_auth("PUT", f"/api/admin/users/{user_id}/role", admin.raw_token, payload=payload)
+
+
+@router.get("/users/{user_id}/credit-logs")
+async def get_user_credit_logs(
+    user_id: str,
+    admin: AuthUser = Depends(require_admin),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+):
+    params = {"page": page, "page_size": page_size}
+    return await _proxy_auth("GET", f"/api/admin/users/{user_id}/credit-logs", admin.raw_token, params=params)
+
+
+@router.get("/credit-logs")
+async def get_all_credit_logs(
+    admin: AuthUser = Depends(require_admin),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+):
+    params = {"page": page, "page_size": page_size}
+    return await _proxy_auth("GET", "/api/admin/credit-logs", admin.raw_token, params=params)
+
+
+# ---------------------------------------------------------------------------
+# Translation Fix management — local DB
+# ---------------------------------------------------------------------------
+
+@router.get("/translation-fixes")
+async def list_translation_fixes(
+    admin: AuthUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Add credits to a user's balance (累加积分)."""
-    if req.amount <= 0:
-        raise HTTPException(400, "充值数量必须大于 0")
+    result = await db.execute(
+        select(TranslationFix).order_by(TranslationFix.id.desc())
+    )
+    fixes = result.scalars().all()
+    return [
+        {
+            "id": f.id,
+            "pattern": f.pattern,
+            "replacement": f.replacement,
+            "enabled": f.enabled,
+            "created_at": f.created_at.isoformat() if f.created_at else None,
+        }
+        for f in fixes
+    ]
 
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
 
-    if not user:
-        raise HTTPException(404, "用户不存在")
-
-    user.credits += req.amount
-    db.add(CreditTransaction(
-        user_id=user.id,
-        amount=req.amount,
-        balance_after=user.credits,
-        transaction_type="admin_add",
-        description=f"管理员 {admin.username} 充值 {req.amount} 点",
-    ))
+@router.post("/translation-fixes")
+async def create_translation_fix(
+    req: TranslationFixCreate,
+    admin: AuthUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    fix = TranslationFix(pattern=req.pattern, replacement=req.replacement, enabled=req.enabled)
+    db.add(fix)
     await db.commit()
-    await db.refresh(user)
-
+    await db.refresh(fix)
     return {
-        "success": True,
-        "user_id": user.id,
-        "username": user.username,
-        "added": req.amount,
-        "new_credits": user.credits,
+        "id": fix.id,
+        "pattern": fix.pattern,
+        "replacement": fix.replacement,
+        "enabled": fix.enabled,
+        "created_at": fix.created_at.isoformat() if fix.created_at else None,
     }
 
 
-class UpdateUserRequest(BaseModel):
-    username: Optional[str] = None
-    email: Optional[str] = None
-
-
-@router.put("/users/{user_id}")
-async def update_user(
-    user_id: int,
-    req: UpdateUserRequest,
-    admin: User = Depends(require_admin),
+@router.put("/translation-fixes/{fix_id}")
+async def update_translation_fix(
+    fix_id: int,
+    req: TranslationFixUpdate,
+    admin: AuthUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Update a user's username and/or email."""
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-
-    if not user:
-        raise HTTPException(404, "用户不存在")
-
-    if req.username is not None:
-        if len(req.username) < 2 or len(req.username) > 50:
-            raise HTTPException(400, "用户名需要 2-50 个字符")
-        existing = await db.execute(
-            select(User).where(User.username == req.username, User.id != user_id)
-        )
-        if existing.scalar_one_or_none():
-            raise HTTPException(400, "用户名已被使用")
-        user.username = req.username
-
-    if req.email is not None:
-        if "@" not in req.email:
-            raise HTTPException(400, "请输入有效邮箱")
-        existing = await db.execute(
-            select(User).where(User.email == req.email, User.id != user_id)
-        )
-        if existing.scalar_one_or_none():
-            raise HTTPException(400, "该邮箱已被其他用户使用")
-        user.email = req.email
-
+    result = await db.execute(select(TranslationFix).where(TranslationFix.id == fix_id))
+    fix = result.scalar_one_or_none()
+    if not fix:
+        raise HTTPException(404, "翻译修正规则不存在")
+    if req.pattern is not None:
+        fix.pattern = req.pattern
+    if req.replacement is not None:
+        fix.replacement = req.replacement
+    if req.enabled is not None:
+        fix.enabled = req.enabled
     await db.commit()
-    await db.refresh(user)
-
+    await db.refresh(fix)
     return {
-        "success": True,
-        "user_id": user.id,
-        "username": user.username,
-        "email": user.email,
+        "id": fix.id,
+        "pattern": fix.pattern,
+        "replacement": fix.replacement,
+        "enabled": fix.enabled,
+        "created_at": fix.created_at.isoformat() if fix.created_at else None,
     }
 
 
-class ResetPasswordRequest(BaseModel):
-    new_password: str
-
-
-@router.post("/users/{user_id}/reset-password")
-async def reset_user_password(
-    user_id: int,
-    req: ResetPasswordRequest,
-    admin: User = Depends(require_admin),
+@router.delete("/translation-fixes/{fix_id}")
+async def delete_translation_fix(
+    fix_id: int,
+    admin: AuthUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Reset a user's password."""
-    if len(req.new_password) < 6:
-        raise HTTPException(400, "密码至少 6 个字符")
-
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-
-    if not user:
-        raise HTTPException(404, "用户不存在")
-
-    user.password_hash = pwd_context.hash(req.new_password)
+    result = await db.execute(select(TranslationFix).where(TranslationFix.id == fix_id))
+    fix = result.scalar_one_or_none()
+    if not fix:
+        raise HTTPException(404, "翻译修正规则不存在")
+    await db.delete(fix)
     await db.commit()
+    return {"success": True}
 
-    return {"success": True, "message": f"用户 {user.username} 的密码已重置"}
+
+@router.post("/translation-fixes/apply-all")
+async def apply_all_translation_fixes(
+    admin: AuthUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(TranslationFix).where(TranslationFix.enabled == True)
+    )
+    fixes = result.scalars().all()
+    if not fixes:
+        return {"success": True, "updated_count": 0, "message": "没有启用的修正规则"}
+
+    sentence_result = await db.execute(
+        select(Sentence).where(Sentence.text_zh.isnot(None))
+    )
+    sentences = sentence_result.scalars().all()
+
+    updated_count = 0
+    for sentence in sentences:
+        original = sentence.text_zh
+        modified = original
+        for fix in fixes:
+            modified = modified.replace(fix.pattern, fix.replacement)
+        if modified != original:
+            sentence.text_zh = modified
+            updated_count += 1
+
+    await db.commit()
+    return {
+        "success": True,
+        "updated_count": updated_count,
+        "fixes_applied": len(fixes),
+        "message": f"已应用 {len(fixes)} 条规则，更新了 {updated_count} 个句子",
+    }
 
 
-# --- Translation Management Endpoints ---
+# ---------------------------------------------------------------------------
+# Book / Lecture title editing — local DB
+# ---------------------------------------------------------------------------
+
+@router.put("/books/{book_id}/title")
+async def update_book_title(
+    book_id: int,
+    req: BookTitleUpdate,
+    admin: AuthUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Book).where(Book.id == book_id))
+    book = result.scalar_one_or_none()
+    if not book:
+        raise HTTPException(404, "书籍不存在")
+    if req.title_zh is not None:
+        book.title_zh = req.title_zh
+    await db.commit()
+    return {"id": book.id, "title_zh": book.title_zh}
+
+
+@router.put("/lectures/{lecture_id}/title")
+async def update_lecture_title(
+    lecture_id: int,
+    req: LectureTitleUpdate,
+    admin: AuthUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Lecture).where(Lecture.id == lecture_id))
+    lecture = result.scalar_one_or_none()
+    if not lecture:
+        raise HTTPException(404, "讲座不存在")
+    if req.title_zh is not None:
+        lecture.title_zh = req.title_zh
+    await db.commit()
+    return {"id": lecture.id, "title_zh": lecture.title_zh}
+
+
+# ---------------------------------------------------------------------------
+# Lecture retranslation — local DB + translation service
+# ---------------------------------------------------------------------------
 
 @router.post("/lectures/{lecture_id}/retranslate", response_model=RetranslateResponse)
 async def admin_retranslate(
     lecture_id: int,
     request: RetranslateRequest,
-    admin: User = Depends(require_admin),
+    admin: AuthUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Admin-only endpoint to re-translate a lecture.
-    
-    This allows administrators to fix translation errors without cost.
-    """
     try:
         result = await admin_retranslate_lecture(
             db=db,
             lecture_id=lecture_id,
             clear_existing=request.clear_existing,
-            force_all=request.force_all
+            force_all=request.force_all,
         )
-        
         return RetranslateResponse(**result)
-        
     except ValueError as e:
         raise HTTPException(404, str(e))
     except Exception as e:
-        logger.error(f"Error in admin retranslation: {e}")
+        logger.error("Error in admin retranslation: %s", e)
         raise HTTPException(500, f"Translation failed: {str(e)}")
 
+
+# ---------------------------------------------------------------------------
+# Translation statistics — local DB
+# ---------------------------------------------------------------------------
 
 @router.get("/lectures/{lecture_id}/translation-stats", response_model=LectureTranslationStats)
 async def get_lecture_translation_stats(
     lecture_id: int,
-    admin: User = Depends(require_admin),
+    admin: AuthUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get detailed translation statistics for a lecture."""
-    # Total sentences
     total_result = await db.execute(
         select(func.count(Sentence.id))
         .select_from(Sentence)
@@ -325,8 +406,7 @@ async def get_lecture_translation_stats(
         .where(Paragraph.lecture_id == lecture_id)
     )
     total = total_result.scalar() or 0
-    
-    # Translated sentences
+
     translated_result = await db.execute(
         select(func.count(Sentence.id))
         .select_from(Sentence)
@@ -334,334 +414,129 @@ async def get_lecture_translation_stats(
         .where(Paragraph.lecture_id == lecture_id, Sentence.text_zh.isnot(None))
     )
     translated = translated_result.scalar() or 0
-    
+
     untranslated = total - translated
     ratio = translated / total if total > 0 else 0
-    
+
     return LectureTranslationStats(
         lecture_id=lecture_id,
         total_sentences=total,
         translated_sentences=translated,
         untranslated_sentences=untranslated,
-        translation_ratio=ratio
+        translation_ratio=ratio,
     )
 
 
-# Import needed for stats endpoint
-from app.db.models import Sentence, Paragraph
-
-# Set up logger
-import logging
-logger = logging.getLogger(__name__)
-
-# --- Admin User Management Endpoints ---
-
-class ToggleAdminResponse(BaseModel):
-    success: bool
-    user_id: int
-    username: str
-    is_admin: int
-    message: str
-
-
-@router.put("/users/{user_id}/toggle-admin", response_model=ToggleAdminResponse)
-async def toggle_user_admin(
-    user_id: int,
-    admin: User = Depends(require_admin),
+@router.get("/translation-stats")
+async def get_overall_translation_stats(
+    admin: AuthUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """切换用户的管理员权限"""
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
+    total_result = await db.execute(select(func.count(Sentence.id)))
+    total = total_result.scalar() or 0
 
-    if not user:
-        raise HTTPException(404, "用户不存在")
-
-    if user.id == admin.id:
-        raise HTTPException(400, "不能修改自己的管理员权限")
-
-    user.is_admin = 1 if user.is_admin == 0 else 0
-    await db.commit()
-    await db.refresh(user)
-
-    return ToggleAdminResponse(
-        success=True,
-        user_id=user.id,
-        username=user.username,
-        is_admin=user.is_admin,
-        message=f"{user.username} 的管理员权限已{'开启' if user.is_admin else '关闭'}",
+    translated_result = await db.execute(
+        select(func.count(Sentence.id)).where(Sentence.text_zh.isnot(None))
     )
+    translated = translated_result.scalar() or 0
+
+    books_result = await db.execute(select(func.count(Book.id)))
+    book_count = books_result.scalar() or 0
+
+    lectures_result = await db.execute(select(func.count(Lecture.id)))
+    lecture_count = lectures_result.scalar() or 0
+
+    return {
+        "total_sentences": total,
+        "translated_sentences": translated,
+        "untranslated_sentences": total - translated,
+        "translation_ratio": translated / total if total > 0 else 0,
+        "book_count": book_count,
+        "lecture_count": lecture_count,
+    }
 
 
-class DeleteUserResponse(BaseModel):
-    success: bool
-    deleted_user_id: int
-    username: str
-    message: str
+# ---------------------------------------------------------------------------
+# CreditSetting management — local DB (price configuration)
+# ---------------------------------------------------------------------------
 
-
-@router.delete("/users/{user_id}", response_model=DeleteUserResponse)
-async def delete_user(
-    user_id: int,
-    admin: User = Depends(require_admin),
+@router.get("/credit-settings")
+async def list_credit_settings(
+    admin: AuthUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """删除指定用户（不能删除自己）"""
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
+    result = await db.execute(select(CreditSetting).order_by(CreditSetting.id))
+    settings_list = result.scalars().all()
+    return [
+        {
+            "id": s.id,
+            "action": s.action,
+            "price": float(s.price) if s.price else 0,
+            "description": s.description,
+            "updated_at": s.updated_at.isoformat() if s.updated_at else None,
+        }
+        for s in settings_list
+    ]
 
-    if not user:
-        raise HTTPException(404, "用户不存在")
 
-    if user.id == admin.id:
-        raise HTTPException(400, "不能删除自己的账号")
-
-    username = user.username
-    await db.delete(user)
-    await db.commit()
-
-    return DeleteUserResponse(
-        success=True,
-        deleted_user_id=user_id,
-        username=username,
-        message=f"用户 {username} 已删除",
+@router.post("/credit-settings")
+async def create_credit_setting(
+    req: CreditSettingCreate,
+    admin: AuthUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    existing = await db.execute(
+        select(CreditSetting).where(CreditSetting.action == req.action)
     )
-
-
-# --- Credit Settings Endpoints ---
-
-class CreditSettingResponse(BaseModel):
-    id: int
-    key: str
-    value: int
-    description: Optional[str] = None
-    updated_at: Optional[datetime] = None
-
-    class Config:
-        from_attributes = True
-
-
-class CreditSettingUpdateRequest(BaseModel):
-    value: int
-
-
-@router.get("/credit-settings", response_model=list[CreditSettingResponse])
-async def get_credit_settings(
-    admin: User = Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    """Get all credit pricing settings."""
-    result = await db.execute(select(CreditSetting).order_by(CreditSetting.key))
-    rows = result.scalars().all()
-    return [CreditSettingResponse.model_validate(r) for r in rows]
-
-
-@router.put("/credit-settings/{key}", response_model=CreditSettingResponse)
-async def update_credit_setting(
-    key: str,
-    req: CreditSettingUpdateRequest,
-    admin: User = Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    """Update a credit pricing setting value."""
-    result = await db.execute(
-        select(CreditSetting).where(CreditSetting.key == key)
-    )
-    setting = result.scalar_one_or_none()
-    if not setting:
-        raise HTTPException(404, f"设置键 '{key}' 不存在")
-
-    setting.value = req.value
+    if existing.scalar_one_or_none():
+        raise HTTPException(409, f"Credit setting '{req.action}' already exists")
+    setting = CreditSetting(action=req.action, price=req.price, description=req.description)
+    db.add(setting)
     await db.commit()
     await db.refresh(setting)
-    return CreditSettingResponse.model_validate(setting)
+    return {
+        "id": setting.id,
+        "action": setting.action,
+        "price": float(setting.price) if setting.price else 0,
+        "description": setting.description,
+    }
 
 
-# --- Credit Transaction History ---
-
-class CreditTransactionResponse(BaseModel):
-    id: int
-    user_id: int
-    amount: int
-    balance_after: int
-    transaction_type: str
-    reference_type: Optional[str] = None
-    reference_id: Optional[int] = None
-    description: Optional[str] = None
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-@router.get("/credit-transactions", response_model=list[CreditTransactionResponse])
-async def get_credit_transactions(
-    user_id: Optional[int] = None,
-    limit: int = 100,
-    offset: int = 0,
-    admin: User = Depends(require_admin),
+@router.put("/credit-settings/{setting_id}")
+async def update_credit_setting(
+    setting_id: int,
+    req: CreditSettingUpdate,
+    admin: AuthUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get credit transaction history (admin view)."""
-    query = select(CreditTransaction).order_by(CreditTransaction.created_at.desc())
-    if user_id is not None:
-        query = query.where(CreditTransaction.user_id == user_id)
-    query = query.offset(offset).limit(min(limit, 500))
-    result = await db.execute(query)
-    rows = result.scalars().all()
-    return [CreditTransactionResponse.model_validate(r) for r in rows]
-
-
-# --- Translation Fix Endpoints ---
-
-class TranslationFixRequest(BaseModel):
-    pattern: str
-    replacement: str
-    enabled: bool = True
-
-
-class TranslationFixResponse(BaseModel):
-    id: int
-    pattern: str
-    replacement: str
-    enabled: bool
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-@router.get("/translation-fixes", response_model=list[TranslationFixResponse])
-async def get_translation_fixes(
-    admin: User = Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    result = await db.execute(select(TranslationFix).order_by(TranslationFix.id))
-    return [TranslationFixResponse.model_validate(r) for r in result.scalars().all()]
-
-
-@router.post("/translation-fixes", response_model=TranslationFixResponse)
-async def create_translation_fix(
-    req: TranslationFixRequest,
-    admin: User = Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    fix = TranslationFix(pattern=req.pattern, replacement=req.replacement, enabled=req.enabled)
-    db.add(fix)
+    result = await db.execute(select(CreditSetting).where(CreditSetting.id == setting_id))
+    setting = result.scalar_one_or_none()
+    if not setting:
+        raise HTTPException(404, "积分设置不存在")
+    if req.price is not None:
+        setting.price = req.price
+    if req.description is not None:
+        setting.description = req.description
     await db.commit()
-    await db.refresh(fix)
-    return TranslationFixResponse.model_validate(fix)
+    await db.refresh(setting)
+    return {
+        "id": setting.id,
+        "action": setting.action,
+        "price": float(setting.price) if setting.price else 0,
+        "description": setting.description,
+    }
 
 
-@router.put("/translation-fixes/{fix_id}", response_model=TranslationFixResponse)
-async def update_translation_fix(
-    fix_id: int,
-    req: TranslationFixRequest,
-    admin: User = Depends(require_admin),
+@router.delete("/credit-settings/{setting_id}")
+async def delete_credit_setting(
+    setting_id: int,
+    admin: AuthUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(TranslationFix).where(TranslationFix.id == fix_id))
-    fix = result.scalar_one_or_none()
-    if not fix:
-        raise HTTPException(404, "规则不存在")
-    fix.pattern = req.pattern
-    fix.replacement = req.replacement
-    fix.enabled = req.enabled
-    await db.commit()
-    await db.refresh(fix)
-    return TranslationFixResponse.model_validate(fix)
-
-
-@router.delete("/translation-fixes/{fix_id}")
-async def delete_translation_fix(
-    fix_id: int,
-    admin: User = Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    result = await db.execute(select(TranslationFix).where(TranslationFix.id == fix_id))
-    fix = result.scalar_one_or_none()
-    if not fix:
-        raise HTTPException(404, "规则不存在")
-    await db.delete(fix)
+    result = await db.execute(select(CreditSetting).where(CreditSetting.id == setting_id))
+    setting = result.scalar_one_or_none()
+    if not setting:
+        raise HTTPException(404, "积分设置不存在")
+    await db.delete(setting)
     await db.commit()
     return {"success": True}
-
-
-@router.post("/translation-fixes/apply-all")
-async def apply_translation_fixes_to_all(
-    admin: User = Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    """Apply all enabled translation fixes to every existing text_zh in the DB."""
-    fixes_result = await db.execute(
-        select(TranslationFix).where(TranslationFix.enabled == True).order_by(TranslationFix.id)
-    )
-    fixes = fixes_result.scalars().all()
-    if not fixes:
-        return {"success": True, "updated": 0, "message": "没有启用的替换规则"}
-
-    from sqlalchemy import text as sa_text
-    total_updated = 0
-    batch_size = 5000
-
-    for fix in fixes:
-        updated = 0
-        while True:
-            result = await db.execute(
-                sa_text("UPDATE sentences SET text_zh = replace(text_zh, :pat, :rep) WHERE id IN (SELECT id FROM sentences WHERE text_zh IS NOT NULL AND text_zh != '' AND text_zh LIKE '%' || :pat || '%' LIMIT :lim) RETURNING id"),
-                {"pat": fix.pattern, "rep": fix.replacement, "lim": batch_size}
-            )
-            rows = result.fetchall()
-            if not rows:
-                break
-            updated += len(rows)
-            await db.commit()
-        total_updated += updated
-
-    await db.commit()
-    return {"success": True, "updated": total_updated, "message": f"已更新 {total_updated} 条翻译"}
-
-
-# --- Book & Lecture Title Editing ---
-
-class TitleEditRequest(BaseModel):
-    title_de: Optional[str] = None
-    title_zh: Optional[str] = None
-
-
-@router.put("/books/{book_id}/titles")
-async def update_book_title(
-    book_id: int,
-    req: TitleEditRequest,
-    admin: User = Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    result = await db.execute(select(Book).where(Book.id == book_id))
-    book = result.scalar_one_or_none()
-    if not book:
-        raise HTTPException(404, "书籍不存在")
-    if req.title_de is not None:
-        book.title_de = req.title_de
-    if req.title_zh is not None:
-        book.title_zh = req.title_zh
-    await db.commit()
-    return {"success": True, "title_de": book.title_de, "title_zh": book.title_zh}
-
-
-@router.put("/lectures/{lecture_id}/titles")
-async def update_lecture_title(
-    lecture_id: int,
-    req: TitleEditRequest,
-    admin: User = Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    result = await db.execute(select(Lecture).where(Lecture.id == lecture_id))
-    lec = result.scalar_one_or_none()
-    if not lec:
-        raise HTTPException(404, "讲座不存在")
-    if req.title_de is not None:
-        lec.title_de = req.title_de
-    if req.title_zh is not None:
-        lec.title_zh = req.title_zh
-    await db.commit()
-    return {"success": True, "title_de": lec.title_de, "title_zh": lec.title_zh}

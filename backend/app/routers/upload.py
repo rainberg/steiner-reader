@@ -9,10 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.database import get_db
-from app.db.models import Book, Lecture, Paragraph, Sentence, User
+from app.db.models import Book, Lecture, Paragraph, Sentence
 from app.models.schemas import UploadResponse
 from app.services.pdf_parser import parse_pdf, get_stats
-from app.routers.auth import require_admin
+from app.routers.auth import AuthUser, require_admin
 
 router = APIRouter(prefix="/api", tags=["upload"])
 
@@ -22,7 +22,7 @@ ALLOWED_EXTENSIONS = {".pdf"}
 @router.post("/books/upload", response_model=UploadResponse)
 async def upload_pdf(
     file: UploadFile = File(...),
-    admin: User = Depends(require_admin),
+    admin: AuthUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Upload a PDF file, parse its structure, and save to database."""

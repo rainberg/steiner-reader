@@ -7,9 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db.database import get_db
-from app.db.models import Book, Lecture, Paragraph, Sentence, User
+from app.db.models import Book, Lecture, Paragraph, Sentence
 from app.models.schemas import BookResponse, BookDetail, BookSummary, LectureResponse, LectureSummary, LectureListItem
-from app.routers.auth import get_current_user
+from app.routers.auth import get_current_user, AuthUser
 
 router = APIRouter(prefix="/api/books", tags=["books"])
 
@@ -310,7 +310,7 @@ async def get_lecture(
     book_id: int,
     lecture_id: int,
     db: AsyncSession = Depends(get_db),
-    user: User | None = Depends(get_current_user),
+    user: AuthUser | None = Depends(get_current_user),
 ):
     """Get a specific lecture with all paragraphs and sentences (for reader page)."""
     result = await db.execute(

@@ -45,7 +45,7 @@ export default function GroupedBooksView() {
         <div key={g.group} className="card overflow-hidden">
           <button
             type="button"
-            onClick={() => toggle(g.group)}
+            onClick={() => toggle(g.group || "")}
             className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50/60 transition-colors text-left"
           >
             <div className="flex items-center gap-3">
@@ -61,17 +61,17 @@ export default function GroupedBooksView() {
               </div>
             </div>
             <svg
-              className={`w-5 h-5 text-gray-400 transition-transform ${expanded.has(g.group) ? 'rotate-180' : ''}`}
+              className={`w-5 h-5 text-gray-400 transition-transform ${expanded.has(g.group || "") ? 'rotate-180' : ''}`}
               fill="none" viewBox="0 0 24 24" stroke="currentColor"
             >
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
           </button>
 
-          {expanded.has(g.group) && (
+          {expanded.has(g.group || "") && (
             <div className="border-t border-gray-100 px-5 py-4 bg-gray-50/30">
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {g.books.map(book => (
+                {(g.books || []).map(book => (
                   <a key={book.id} href={`/books/${book.id}`}>
                     <div className="card p-4 h-full flex flex-col group">
                       <div className="flex items-start justify-between mb-2">

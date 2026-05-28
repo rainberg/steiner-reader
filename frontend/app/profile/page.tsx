@@ -42,11 +42,11 @@ export default function ProfilePage() {
     fetchMe()
       .then(u => {
         setUser(u);
-        localStorage.setItem('steiner_user', JSON.stringify(u));
+        localStorage.setItem('auth_user', JSON.stringify(u));
         setLoading(false);
         // Fetch transaction history
         setTxLoading(true);
-        fetchMyTransactions(u.id).then(data => {
+        fetchMyTransactions().then(data => {
           setTransactions(data.transactions || []);
         }).catch(() => {}).finally(() => setTxLoading(false));
       })
@@ -110,7 +110,7 @@ export default function ProfilePage() {
       setEmailSuccess('邮箱修改成功');
       const u = await fetchMe();
       setUser(u);
-      localStorage.setItem('steiner_user', JSON.stringify(u));
+      localStorage.setItem('auth_user', JSON.stringify(u));
       setNewEmail('');
       setEmailPassword('');
     } catch (err: unknown) {
@@ -127,10 +127,10 @@ export default function ProfilePage() {
     setUsernameLoading(true);
     try {
       const res = await changeUsername(newUsername, usernamePassword);
-      setUsernameSuccess(res.message);
+      setUsernameSuccess('用户名修改成功');
       const u = await fetchMe();
       setUser(u);
-      localStorage.setItem('steiner_user', JSON.stringify(u));
+      localStorage.setItem('auth_user', JSON.stringify(u));
       setNewUsername('');
       setUsernamePassword('');
     } catch (err: unknown) {
@@ -165,7 +165,7 @@ export default function ProfilePage() {
         <div className="space-y-3">
           <div className="flex items-center justify-between py-2 border-b border-gray-100">
             <span className="text-sm text-gray-500">用户名</span>
-            <span className="text-sm text-gray-800 font-medium">{user.username}</span>
+            <span className="text-sm text-gray-800 font-medium">{user.display_name}</span>
           </div>
           <div className="flex items-center justify-between py-2 border-b border-gray-100">
             <span className="text-sm text-gray-500">邮箱</span>

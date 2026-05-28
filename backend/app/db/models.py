@@ -1,7 +1,7 @@
 """SQLAlchemy ORM models for Steiner Reader."""
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Date, Boolean
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Date, Boolean, Numeric
 from sqlalchemy.orm import relationship
 
 from app.db.database import Base
@@ -108,80 +108,42 @@ class TranslationJob(Base):
 
     book = relationship("Book", back_populates="translation_jobs")
 
-class User(Base):
-    __tablename__ = "users"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    username = Column(String(50), unique=True, nullable=False, index=True)
-    email = Column(String(255), unique=True, nullable=False, index=True)
-    password_hash = Column(String(255), nullable=False)
-    credits = Column(Integer, default=100)
-    is_admin = Column(Integer, default=0)  # 0=normal, 1=admin
-    username_changed_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    contributions = relationship("Contribution", back_populates="user", cascade="all, delete-orphan")
-    access_grants = relationship("LectureAccess", back_populates="user", cascade="all, delete-orphan")
-    edit_audits = relationship("EditAuditLog", back_populates="user", cascade="all, delete-orphan")
-    credit_transactions = relationship("CreditTransaction", back_populates="user", cascade="all, delete-orphan")
-    recharge_requests = relationship("RechargeRequest", back_populates="user", cascade="all, delete-orphan")
-
 
 class CreditSetting(Base):
     __tablename__ = "credit_settings"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    key = Column(String(50), unique=True, nullable=False, index=True)
-    value = Column(Integer, nullable=False, default=10)
+    action = Column(String(50), unique=True, nullable=False, index=True)
+    price = Column(Numeric(10, 2), nullable=False)
     description = Column(String(255))
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-
-class CreditTransaction(Base):
-    __tablename__ = "credit_transactions"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    amount = Column(Integer, nullable=False)
-    balance_after = Column(Integer, nullable=False)
-    transaction_type = Column(String(50), nullable=False)
-    reference_type = Column(String(50))
-    reference_id = Column(Integer)
-    description = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
-
-    user = relationship("User", back_populates="credit_transactions", foreign_keys=[user_id])
 
 
 class Contribution(Base):
     __tablename__ = "contributions"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    lecture_id = Column(Integer, ForeignKey("lectures.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String(36), nullable=False, index=True)
+    lecture_id = Column(Integer, ForeignKey("lectures.id", ondelete="CASCADE"), nullable=False)
     contribution_type = Column(String(30), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
-
-    user = relationship("User", back_populates="contributions", foreign_keys=[user_id])
 
 
 class LectureAccess(Base):
     __tablename__ = "lecture_access"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    lecture_id = Column(Integer, ForeignKey("lectures.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String(36), nullable=False, index=True)
+    lecture_id = Column(Integer, ForeignKey("lectures.id", ondelete="CASCADE"), nullable=False)
     access_type = Column(String(30), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
-
-    user = relationship("User", back_populates="access_grants", foreign_keys=[user_id])
 
 
 class EditAuditLog(Base):
     __tablename__ = "edit_audit_log"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(36), nullable=False)
     sentence_id = Column(Integer, ForeignKey("sentences.id", ondelete="CASCADE"), nullable=False)
     field_changed = Column(String(20), nullable=False)
     old_value = Column(Text)
@@ -189,21 +151,19 @@ class EditAuditLog(Base):
     credits_cost = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    user = relationship("User", back_populates="edit_audits", foreign_keys=[user_id])
-
 
 class SentenceRevision(Base):
     __tablename__ = "sentence_revisions"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     sentence_id = Column(Integer, ForeignKey("sentences.id", ondelete="CASCADE"), nullable=False, index=True)
-    field = Column(String(10), nullable=False)  # "text_de" or "text_zh"
+    field = Column(String(10), nullable=False)
     new_value = Column(Text, nullable=False)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    status = Column(String(20), default="active")  # active, rejected
+    user_id = Column(String(36), nullable=False)
+    status = Column(String(20), default="active")
     vote_count = Column(Integer, default=0)
-    text_hash = Column(String(64))  # SHA256 of normalized original text
-    text_anchor = Column(String(200))  # first 60 + last 60 chars for fuzzy matching
+    text_hash = Column(String(64))
+    text_anchor = Column(String(200))
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
@@ -212,7 +172,7 @@ class RevisionVote(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     revision_id = Column(Integer, ForeignKey("sentence_revisions.id", ondelete="CASCADE"), nullable=False, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String(36), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -224,20 +184,3 @@ class TranslationFix(Base):
     replacement = Column(Text, nullable=False)
     enabled = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
-
-
-class RechargeRequest(Base):
-    __tablename__ = "recharge_requests"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    amount = Column(Integer, nullable=False)
-    coefficient = Column(Integer, default=10)
-    payment_image = Column(String(255))
-    image_hash = Column(String(64))
-    status = Column(String(20), default="pending")  # pending, approved, rejected
-    admin_note = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    user = relationship("User", back_populates="recharge_requests", foreign_keys=[user_id])
