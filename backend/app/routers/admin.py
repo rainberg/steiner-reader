@@ -109,10 +109,12 @@ class TranslationFixUpdate(BaseModel):
 
 class BookTitleUpdate(BaseModel):
     title_zh: Optional[str] = None
+    title_de: Optional[str] = None
 
 
 class LectureTitleUpdate(BaseModel):
     title_zh: Optional[str] = None
+    title_de: Optional[str] = None
 
 
 class CreditSettingCreate(BaseModel):
@@ -140,7 +142,29 @@ async def list_users(
     params = {"page": page, "page_size": page_size}
     if search:
         params["search"] = search
-    return await _proxy_auth("GET", "/api/admin/users", admin.raw_token, params=params)
+    data = await _proxy_auth("GET", "/api/admin/users", admin.raw_token, params=params)
+
+    if isinstance(data, list):
+        user_list = data
+        total = len(data)
+    else:
+        user_list = data.get("users", data.get("items", []))
+        total = data.get("total", len(user_list))
+
+    normalized = []
+    for u in user_list:
+        normalized.append({
+            "id": str(u.get("id", "")),
+            "username": u.get("display_name") or u.get("username") or u.get("email", ""),
+            "email": u.get("email", ""),
+            "credits": float(u.get("credits", 0)),
+            "is_admin": 1 if u.get("role") == "admin" or u.get("is_admin") else 0,
+            "is_active": u.get("is_active", True),
+            "role": u.get("role", "user"),
+            "created_at": u.get("created_at", ""),
+        })
+
+    return {"users": normalized, "total": total, "page": page, "page_size": page_size}
 
 
 @router.put("/users/{user_id}/credits")
@@ -169,6 +193,38 @@ async def toggle_user_active(
     admin: AuthUser = Depends(require_admin),
 ):
     return await _proxy_auth("PUT", f"/api/admin/users/{user_id}/toggle-active", admin.raw_token)
+
+
+@router.put("/users/{user_id}/toggle-admin")
+async def toggle_user_admin(
+    user_id: str,
+    admin: AuthUser = Depends(require_admin),
+):
+    data = await _proxy_auth("GET", "/api/admin/users", admin.raw_token, params={"search": user_id})
+    if isinstance(data, list):
+        user_list = data
+    else:
+        user_list = data.get("users", data.get("items", []))
+    target_user = None
+    for u in user_list:
+        if str(u.get("id")) == str(user_id):
+            target_user = u
+            break
+    if not target_user:
+        raise HTTPException(404, "用户不存在")
+    current_role = target_user.get("role", "user")
+    new_role = "user" if current_role == "admin" else "admin"
+    result = await _proxy_auth("PUT", f"/api/admin/users/{user_id}/role", admin.raw_token, payload={"role": new_role})
+    action = "取消管理员权限" if current_role == "admin" else "设为管理员"
+    return {"message": f"已{action}", "new_role": new_role, **result}
+
+
+@router.delete("/users/{user_id}")
+async def delete_user(
+    user_id: str,
+    admin: AuthUser = Depends(require_admin),
+):
+    return await _proxy_auth("DELETE", f"/api/admin/users/{user_id}", admin.raw_token)
 
 
 @router.put("/users/{user_id}/role")
@@ -342,8 +398,20 @@ async def update_book_title(
         raise HTTPException(404, "书籍不存在")
     if req.title_zh is not None:
         book.title_zh = req.title_zh
+    if req.title_de is not None:
+        book.title_de = req.title_de
     await db.commit()
-    return {"id": book.id, "title_zh": book.title_zh}
+    return {"id": book.id, "title_zh": book.title_zh, "title_de": book.title_de}
+
+
+@router.put("/books/{book_id}/titles")
+async def update_book_titles(
+    book_id: int,
+    req: BookTitleUpdate,
+    admin: AuthUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    return await update_book_title(book_id, req, admin, db)
 
 
 @router.put("/lectures/{lecture_id}/title")
@@ -359,8 +427,20 @@ async def update_lecture_title(
         raise HTTPException(404, "讲座不存在")
     if req.title_zh is not None:
         lecture.title_zh = req.title_zh
+    if req.title_de is not None:
+        lecture.title_de = req.title_de
     await db.commit()
-    return {"id": lecture.id, "title_zh": lecture.title_zh}
+    return {"id": lecture.id, "title_zh": lecture.title_zh, "title_de": lecture.title_de}
+
+
+@router.put("/lectures/{lecture_id}/titles")
+async def update_lecture_titles(
+    lecture_id: int,
+    req: LectureTitleUpdate,
+    admin: AuthUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    return await update_lecture_title(lecture_id, req, admin, db)
 
 
 # ---------------------------------------------------------------------------

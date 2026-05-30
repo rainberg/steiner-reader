@@ -262,6 +262,14 @@ export function clearAuth() {
   localStorage.removeItem('auth_user');
 }
 
+export function updateStoredCredits(credits: number) {
+  const user = getStoredUser();
+  if (!user) return;
+  user.credits = credits;
+  localStorage.setItem('auth_user', JSON.stringify(user));
+  window.dispatchEvent(new Event('storage'));
+}
+
 export async function generateCaptcha(): Promise<SliderCaptcha> {
   const res = await fetch(`${AUTH_BASE}/api/auth/captcha/generate`);
   if (!res.ok) throw new Error('获取滑块验证码失败');
@@ -375,6 +383,7 @@ export async function fetchMe(): Promise<User> {
     role: data.role,
     credits: data.credits,
     is_active: data.is_active,
+    is_admin: data.role === 'admin',
     created_at: data.created_at,
   };
   localStorage.setItem('auth_user', JSON.stringify(updatedUser));
@@ -553,7 +562,7 @@ export async function getTranslationCost(lectureId: number): Promise<Translation
 }
 
 export async function getTranslationStatus(lectureId: number): Promise<TranslationStatus> {
-  const res = await fetch(`${API_BASE}/api/lectures/${lectureId}/translation-status`, { cache: 'no-store' });
+  const res = await fetch(`${API_BASE}/api/lectures/${lectureId}/translation-status?_t=${Date.now()}`, { cache: 'no-store' });
   if (!res.ok) throw new Error('Failed to fetch status');
   return res.json();
 }
@@ -616,10 +625,12 @@ export interface DownloadPermission {
 }
 
 export interface ContributionDisplay {
-  count?: number;
-  username: string;
+  user_id?: string;
+  display_name: string;
   contribution_type: string;
-  created_at: string;
+  cost?: number;
+  grants_download?: boolean;
+  created_at: string | null;
 }
 
 export interface EditLogEntry {

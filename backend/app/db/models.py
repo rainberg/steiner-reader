@@ -126,6 +126,10 @@ class Contribution(Base):
     user_id = Column(String(36), nullable=False, index=True)
     lecture_id = Column(Integer, ForeignKey("lectures.id", ondelete="CASCADE"), nullable=False)
     contribution_type = Column(String(30), nullable=False)
+    book_id = Column(Integer, ForeignKey("books.id", ondelete="CASCADE"), nullable=True)
+    cost = Column(Integer, default=0, server_default="0")
+    grants_download = Column(Boolean, default=False, server_default="false")
+    display_name = Column(String(100), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -184,3 +188,18 @@ class TranslationFix(Base):
     replacement = Column(Text, nullable=False)
     enabled = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class RechargeRequest(Base):
+    __tablename__ = "recharge_requests"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(36), nullable=False, index=True)
+    amount = Column(Integer, nullable=False)
+    coefficient = Column(Integer, default=10)
+    payment_image = Column(String(255), nullable=True)
+    image_hash = Column(String(64), nullable=True)
+    status = Column(String(20), default="pending", server_default="pending", index=True)
+    admin_note = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -39,7 +39,7 @@ export default function AdminPage() {
   const [resetModal, setResetModal] = useState<{ user: User } | null>(null);
   const [newPassword, setNewPassword] = useState("");
 
-  const token = typeof window !== "undefined" ? localStorage.getItem("steiner_token") : null;
+  const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
 
   useEffect(() => {
     if (!token) {
@@ -674,7 +674,7 @@ function CreditSettingsTab({
 
 function RechargeReviewTab() {
   const [requests, setRequests] = useState<Array<{
-    id: number; user_id: number; username: string; amount: number;
+    id: number; user_id: string; username: string; amount: number;
     coefficient: number; credits: number;
     payment_image: string | null; status: string; admin_note: string | null;
     created_at: string; updated_at: string | null;
@@ -684,7 +684,7 @@ function RechargeReviewTab() {
   const [reviewMsg, setReviewMsg] = useState("");
 
   const loadRequests = () => {
-    const token = localStorage.getItem("steiner_token");
+    const token = localStorage.getItem("access_token");
     fetch("/api/recharge/admin/pending-requests", {
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -697,7 +697,7 @@ function RechargeReviewTab() {
   useEffect(() => { loadRequests(); }, []);
 
   const handleReview = async (id: number, status: string, note: string) => {
-    const token = localStorage.getItem("steiner_token");
+    const token = localStorage.getItem("access_token");
     const res = await fetch(`/api/recharge/admin/review/${id}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -712,7 +712,7 @@ function RechargeReviewTab() {
     const file = e.target.files?.[0];
     if (!file) return;
     setQrUploading(true);
-    const token = localStorage.getItem("steiner_token");
+    const token = localStorage.getItem("access_token");
     const formData = new FormData();
     formData.append("qr_image", file);
     await fetch("/api/recharge/admin/upload-qr", {
@@ -827,7 +827,7 @@ function UploadTab() {
     if (!files.length) return;
     setUploading(true);
     setResult(null);
-    const token = localStorage.getItem("steiner_token");
+    const token = localStorage.getItem("access_token");
     try {
       const formData = new FormData();
       files.forEach(f => formData.append("files", f));
@@ -900,30 +900,30 @@ function TranslationFixesTab() {
   const [newRep, setNewRep] = useState("");
 
   const load = () => {
-    fetch("/api/admin/translation-fixes", { headers: { Authorization: `Bearer ${localStorage.getItem("steiner_token")}` } })
+    fetch("/api/admin/translation-fixes", { headers: { Authorization: `Bearer ${localStorage.getItem("access_token")}` } })
       .then(r => r.json()).then(setFixes).finally(() => setLoading(false));
   };
   useEffect(load, []);
 
   const addFix = async () => {
     if (!newPat || !newRep) return;
-    await fetch("/api/admin/translation-fixes", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("steiner_token")}` }, body: JSON.stringify({ pattern: newPat, replacement: newRep, enabled: true }) });
+    await fetch("/api/admin/translation-fixes", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("access_token")}` }, body: JSON.stringify({ pattern: newPat, replacement: newRep, enabled: true }) });
     setNewPat(""); setNewRep(""); load(); setMsg("已添加");
   };
 
   const updateFix = async (id: number) => {
-    await fetch(`/api/admin/translation-fixes/${id}`, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("steiner_token")}` }, body: JSON.stringify({ pattern: editPat, replacement: editRep, enabled: true }) });
+    await fetch(`/api/admin/translation-fixes/${id}`, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("access_token")}` }, body: JSON.stringify({ pattern: editPat, replacement: editRep, enabled: true }) });
     setEditing(null); load(); setMsg("已保存");
   };
 
   const deleteFix = async (id: number) => {
-    await fetch(`/api/admin/translation-fixes/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${localStorage.getItem("steiner_token")}` } });
+    await fetch(`/api/admin/translation-fixes/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${localStorage.getItem("access_token")}` } });
     load(); setMsg("已删除");
   };
 
   const applyAll = async () => {
     setMsg("正在应用...");
-    const res = await fetch("/api/admin/translation-fixes/apply-all", { method: "POST", headers: { Authorization: `Bearer ${localStorage.getItem("steiner_token")}` } });
+    const res = await fetch("/api/admin/translation-fixes/apply-all", { method: "POST", headers: { Authorization: `Bearer ${localStorage.getItem("access_token")}` } });
     const d = await res.json();
     setMsg(d.message || "完成");
   };
@@ -992,9 +992,9 @@ function BooksManageTab() {
 
   const loadLectures = (bookId: number, ga: string) => { setSelectedBook({id:bookId,ga_number:ga}); fetch("/api/books/"+bookId).then(r=>r.json()).then(d=>setLectures(d.lectures||[])); };
 
-  const saveBookTitle = async (bookId: number) => { const t=localStorage.getItem("steiner_token"); await fetch("/api/admin/books/"+bookId+"/titles",{method:"PUT",headers:{"Content-Type":"application/json","Authorization":"Bearer "+t},body:JSON.stringify({title_de:editDe,title_zh:editZh})}); setEditingBook(null); loadBooks(page,search); setMsg("已保存"); };
+  const saveBookTitle = async (bookId: number) => { const t=localStorage.getItem("access_token"); await fetch("/api/admin/books/"+bookId+"/titles",{method:"PUT",headers:{"Content-Type":"application/json","Authorization":"Bearer "+t},body:JSON.stringify({title_de:editDe,title_zh:editZh})}); setEditingBook(null); loadBooks(page,search); setMsg("已保存"); };
 
-  const saveLecTitle = async (lecId: number) => { const t=localStorage.getItem("steiner_token"); await fetch("/api/admin/lectures/"+lecId+"/titles",{method:"PUT",headers:{"Content-Type":"application/json","Authorization":"Bearer "+t},body:JSON.stringify({title_de:editDe,title_zh:editZh})}); setEditingLec(null); if(selectedBook) loadLectures(selectedBook.id,selectedBook.ga_number); setMsg("已保存"); };
+  const saveLecTitle = async (lecId: number) => { const t=localStorage.getItem("access_token"); await fetch("/api/admin/lectures/"+lecId+"/titles",{method:"PUT",headers:{"Content-Type":"application/json","Authorization":"Bearer "+t},body:JSON.stringify({title_de:editDe,title_zh:editZh})}); setEditingLec(null); if(selectedBook) loadLectures(selectedBook.id,selectedBook.ga_number); setMsg("已保存"); };
 
   return (<div>
     {msg&&<div className="mb-4 p-2 bg-green-50 text-green-700 rounded text-sm">{msg}</div>}

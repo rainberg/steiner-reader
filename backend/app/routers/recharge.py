@@ -5,14 +5,15 @@ import os
 import uuid
 import logging
 from datetime import datetime
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
-from app.db.models import RechargeRequest, CreditTransaction, CreditSetting
+from app.db.models import RechargeRequest, CreditSetting
 from app.routers.auth import AuthUser, require_user, require_admin
 from app.config import settings
 
@@ -20,53 +21,54 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/recharge", tags=["recharge"])
 
-# Payment proof upload directory
+AUTH_BASE = settings.AUTH_SERVICE_URL
+
 RECHARGE_DIR = "/opt/steiner-reader/images/recharge"
 PAYMENT_QR_PATH = "/opt/steiner-reader/images/recharge/payment_qr.png"
 
-# Ensure directory exists (ignore error outside production)
 try:
     os.makedirs(RECHARGE_DIR, exist_ok=True)
 except PermissionError:
     pass
 
 
-# ── Schemas ────────────────────────────────────────────────────
+async def _add_credits_via_auth(user_id: str, amount: int, token: str) -> dict:
+    async with httpx.AsyncClient(timeout=15) as client:
+        try:
+            resp = await client.post(
+                f"{AUTH_BASE}/api/admin/users/{user_id}/add-credits",
+                headers={"Authorization": f"Bearer {token}"},
+                json={"credits": amount, "remark": "充值审核通过"},
+            )
+            if resp.status_code == 200:
+                return resp.json()
+            try:
+                detail = resp.json().get("detail", resp.text)
+            except Exception:
+                detail = resp.text
+            logger.error("Auth-service add-credits failed for %s: %s", user_id, detail)
+            raise HTTPException(status_code=resp.status_code, detail=f"Auth Service 错误: {detail}")
+        except httpx.HTTPError as exc:
+            logger.error("Auth-service add-credits request failed: %s", exc)
+            raise HTTPException(status_code=502, detail=f"Auth Service 不可用: {exc}")
+
 
 class RechargeSubmitRequest(BaseModel):
     amount: int
 
 
-class RechargeRequestResponse(BaseModel):
-    id: int
-    user_id: int
-    username: str = ""
-    amount: int
-    payment_image: str | None = None
+class RechargeReviewRequest(BaseModel):
     status: str
     admin_note: str | None = None
-    created_at: datetime
-    updated_at: datetime | None = None
 
-    class Config:
-        from_attributes = True
-
-
-class RechargeReviewRequest(BaseModel):
-    status: str  # "approved" or "rejected"
-    admin_note: str | None = None
-
-
-# ── User Endpoints ─────────────────────────────────────────────
 
 @router.get("/info")
 async def recharge_info(db: AsyncSession = Depends(get_db)):
-    """Get recharge coefficient and conversion info."""
     result = await db.execute(
-        select(CreditSetting).where(CreditSetting.key == "recharge_coefficient")
+        select(CreditSetting).where(CreditSetting.action == "recharge_coefficient")
     )
     row = result.scalar_one_or_none()
-    coefficient = row.value if row else 10
+    coefficient = int(row.price) if row else 10
     return {
         "coefficient": coefficient,
         "description": f"1元 = {coefficient}积分",
@@ -85,21 +87,18 @@ async def submit_recharge(
     user: AuthUser = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Submit a recharge application. amount is in RMB yuan. Credits = amount × coefficient."""
     if amount <= 0:
         raise HTTPException(status_code=400, detail="充值金额必须大于0元")
 
     if not payment_image.content_type or not payment_image.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="请上传图片文件")
 
-    # Get current coefficient
     coeff_result = await db.execute(
-        select(CreditSetting).where(CreditSetting.key == "recharge_coefficient")
+        select(CreditSetting).where(CreditSetting.action == "recharge_coefficient")
     )
     coeff_row = coeff_result.scalar_one_or_none()
-    coefficient = coeff_row.value if coeff_row else 10
+    coefficient = int(coeff_row.price) if coeff_row else 10
 
-    # Save payment proof
     ext = os.path.splitext(payment_image.filename or "proof.png")[1] or ".png"
     filename = f"recharge_{user.id}_{uuid.uuid4().hex[:8]}{ext}"
     filepath = os.path.join(RECHARGE_DIR, filename)
@@ -107,7 +106,6 @@ async def submit_recharge(
     content = await payment_image.read()
     file_hash = hashlib.sha256(content).hexdigest()
 
-    # Check for duplicate submission by same user
     dup_result = await db.execute(
         select(RechargeRequest).where(
             RechargeRequest.user_id == user.id,
@@ -125,7 +123,6 @@ async def submit_recharge(
     with open(filepath, "wb") as f:
         f.write(content)
 
-    # Create request with coefficient snapshot
     req = RechargeRequest(
         user_id=user.id,
         amount=amount,
@@ -155,7 +152,6 @@ async def my_recharge_requests(
     user: AuthUser = Depends(require_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get current user's recharge request history."""
     result = await db.execute(
         select(RechargeRequest)
         .where(RechargeRequest.user_id == user.id)
@@ -178,14 +174,11 @@ async def my_recharge_requests(
     ]
 
 
-# ── Admin Endpoints ────────────────────────────────────────────
-
 @router.post("/admin/upload-qr")
 async def upload_payment_qr(
     qr_image: UploadFile = File(...),
     admin: AuthUser = Depends(require_admin),
 ):
-    """Admin uploads payment QR code for users to scan."""
     content = await qr_image.read()
     with open(PAYMENT_QR_PATH, "wb") as f:
         f.write(content)
@@ -197,17 +190,15 @@ async def admin_pending_requests(
     admin: AuthUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get all recharge requests for admin review. Optional status filter."""
     result = await db.execute(
         select(RechargeRequest)
-        
         .order_by(
             RechargeRequest.status == "pending",
             RechargeRequest.created_at.desc()
         )
         .limit(200)
     )
-    rows = result.all()
+    rows = result.scalars().all()
     return [
         {
             "id": r.id,
@@ -219,8 +210,8 @@ async def admin_pending_requests(
             "payment_image": r.payment_image,
             "status": r.status,
             "admin_note": r.admin_note,
-            "created_at": r.created_at,
-            "updated_at": r.updated_at,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "updated_at": r.updated_at.isoformat() if r.updated_at else None,
         }
         for r in rows
     ]
@@ -233,16 +224,14 @@ async def admin_review_request(
     admin: AuthUser = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Admin approves or rejects a recharge request. Adds credits on approval."""
     result = await db.execute(
         select(RechargeRequest)
         .where(RechargeRequest.id == request_id)
     )
-    row = result.one_or_none()
-    if not row:
+    req = result.scalar_one_or_none()
+    if not req:
         raise HTTPException(status_code=404, detail="申请不存在")
 
-    req = row
     if req.status != "pending":
         raise HTTPException(status_code=400, detail="该申请已处理过")
 
@@ -254,29 +243,22 @@ async def admin_review_request(
 
     if review.status == "approved":
         credits = req.amount * (req.coefficient or 10)
-        old_credits = user.credits
-        user.credits += credits
-
-        # Log transaction
-        db.add(CreditTransaction(
-            user_id=user.id,
-            amount=credits,
-            balance_after=user.credits,
-            transaction_type="recharge_approved",
-            reference_type="recharge_request",
-            reference_id=req.id,
-            description=f"充值申请 #{req.id} 审核通过，{req.amount}元×{req.coefficient or 10}={credits}积分",
-        ))
+        try:
+            auth_result = await _add_credits_via_auth(req.user_id, credits, admin.raw_token)
+        except HTTPException:
+            req.status = "pending"
+            req.admin_note = None
+            await db.commit()
+            raise
 
         await db.commit()
         return {
             "success": True,
-            "message": f"已批准，用户 {user.display_name} 充值 {req.amount} 元获得 {credits} 积分 (余额 {user.credits})",
-            "old_credits": old_credits,
-            "new_credits": user.credits,
+            "message": f"已批准，用户充值 {req.amount} 元获得 {credits} 积分",
             "amount_yuan": req.amount,
             "coefficient": req.coefficient,
             "credits_added": credits,
+            "auth_result": auth_result,
         }
     else:
         await db.commit()
@@ -286,11 +268,8 @@ async def admin_review_request(
         }
 
 
-# ── Image Serving ──────────────────────────────────────────────
-
 @router.get("/payment-qr")
 async def get_payment_qr():
-    """Serve the admin-uploaded payment QR code."""
     if not os.path.exists(PAYMENT_QR_PATH):
         raise HTTPException(status_code=404, detail="收款码未设置")
     return FileResponse(PAYMENT_QR_PATH, media_type="image/png")
@@ -298,7 +277,6 @@ async def get_payment_qr():
 
 @router.get("/payment-proof/{filename}")
 async def get_payment_proof(filename: str):
-    """Serve a payment proof image."""
     filepath = os.path.join(RECHARGE_DIR, filename)
     if not os.path.exists(filepath) or ".." in filename:
         raise HTTPException(status_code=404, detail="文件不存在")

@@ -9,6 +9,7 @@ Uses Auth Service for credits management:
 import asyncio
 import logging
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -22,6 +23,7 @@ from app.services.auth_client import (
     refund_credits,
     get_credits_balance,
 )
+from app.services.credit_service import add_contribution
 from app.services.translator import translate_lecture_sentences
 
 logger = logging.getLogger(__name__)
@@ -33,7 +35,7 @@ COST_PER_LECTURE = 10
 
 _running_tasks: set[int] = set()
 
-_running_task_tokens: dict[int, str] = {}
+_running_task_info: dict[int, dict] = {}
 
 
 @router.post("/lectures/{lecture_id}/translate")
@@ -64,6 +66,19 @@ async def translate_lecture(
 
     remaining = total - translated
     if remaining == 0:
+        lec_result = await db.execute(select(Lecture).where(Lecture.id == lecture_id))
+        lecture = lec_result.scalar_one_or_none()
+        if lecture and not lecture.is_published:
+            lecture.is_published = True
+            await add_contribution(
+                db, user.id, lecture_id, COST_PER_LECTURE,
+                access_type="translate",
+                display_name=user.display_name,
+                book_id=lecture.book_id,
+                cost=COST_PER_LECTURE,
+                grants_download=True,
+            )
+            await db.commit()
         return {
             "lecture_id": lecture_id,
             "status": "already_translated",
@@ -90,7 +105,11 @@ async def translate_lecture(
         error_msg = reserve_result.get("error", "积分预扣失败") if reserve_result else "积分预扣失败"
         raise HTTPException(status_code=402, detail=f"积分预扣失败: {error_msg}")
 
-    _running_task_tokens[lecture_id] = user.raw_token
+    _running_task_info[lecture_id] = {
+        "token": user.raw_token,
+        "user_id": user.id,
+        "display_name": user.display_name,
+    }
     asyncio.create_task(_do_translate_lecture(lecture_id))
 
     balance = await get_credits_balance(user.raw_token)
@@ -172,24 +191,24 @@ async def lecture_translation_status(
     )
     translated = translated_result.scalar() or 0
 
-    return {
+    result_data = {
         "lecture_id": lecture_id,
         "total": total,
         "translated": translated,
         "completed": translated == total and total > 0,
     }
+    return JSONResponse(
+        content=result_data,
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 async def _do_translate_lecture(lecture_id: int):
-    """Background task: translate all un-translated sentences in a lecture.
-
-    Credits flow:
-    1. Credits were already reserved before this task started
-    2. On success: settle (confirm actual deduction)
-    3. On failure: refund the reserved credits
-    """
     _running_tasks.add(lecture_id)
-    token = _running_task_tokens.pop(lecture_id, None)
+    task_info = _running_task_info.pop(lecture_id, {})
+    token = task_info.get("token")
+    user_id = task_info.get("user_id")
+    display_name = task_info.get("display_name", "")
     success = False
 
     try:
@@ -219,6 +238,9 @@ async def _do_translate_lecture(lecture_id: int):
 
             if not untranslated:
                 success = True
+                if not lecture.is_published:
+                    lecture.is_published = True
+                    await db.commit()
                 return
 
             logger.info(f"Lecture {lecture_id}: translating {len(untranslated)} sentences...")
@@ -236,6 +258,21 @@ async def _do_translate_lecture(lecture_id: int):
 
                 await db.commit()
                 logger.info(f"Lecture {lecture_id}: committed batch {batch_start}-{batch_start+len(batch_sentences)}")
+
+            if not lecture.is_published:
+                lecture.is_published = True
+                await db.commit()
+
+            if user_id:
+                await add_contribution(
+                    db, user_id, lecture_id, COST_PER_LECTURE,
+                    access_type="translate",
+                    display_name=display_name,
+                    book_id=lecture.book_id,
+                    cost=COST_PER_LECTURE,
+                    grants_download=True,
+                )
+                await db.commit()
 
             logger.info(f"Lecture {lecture_id}: done, {total} sentences translated")
             success = True

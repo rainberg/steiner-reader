@@ -78,8 +78,13 @@ async def get_current_user(
     if not identity.get("is_active", True):
         return None
 
+    if not identity.get("display_name"):
+        info = await _fetch_user_info(token)
+        if info:
+            identity.update(info)
+
     return AuthUser(
-        id=identity["user_id"],
+        id=identity["user_id"] if "user_id" in identity else identity.get("id", ""),
         display_name=identity.get("display_name", ""),
         email=identity.get("email"),
         phone=identity.get("phone"),

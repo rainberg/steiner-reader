@@ -42,12 +42,11 @@ async def purchase_download(
 
     cost = await compute_price(db, "download_lecture_price", 0)
 
-    try:
-        deduct_result = await atomic_deduct_credits(
-            user.raw_token, cost,
-            reference_id=f"download-lecture-{lecture_id}",
-            description=f"购买讲座 PDF 下载权限: {lecture.title_de or lecture_id}",
-        )
+    deduct_result = await atomic_deduct_credits(
+        user.raw_token, cost,
+        reference_id=f"download-lecture-{lecture_id}",
+        description=f"购买讲座 PDF 下载权限: {lecture.title_de or lecture_id}",
+    )
     if "error" in deduct_result:
         raise HTTPException(
             status_code=402,
@@ -55,7 +54,14 @@ async def purchase_download(
         )
 
     await grant_access(db, user.id, lecture_id, "download_purchase")
-    await add_contribution(db, user.id, lecture_id, "download_purchase")
+    await add_contribution(
+        db, user.id, lecture_id, cost,
+        access_type="download_purchase",
+        display_name=user.display_name,
+        book_id=lecture.book_id,
+        cost=int(cost),
+        grants_download=True,
+    )
     await db.commit()
 
     return {
@@ -168,6 +174,5 @@ async def lecture_contributions(
     lecture_id: int,
     db: AsyncSession = Depends(get_db),
 ):
-    """Get contribution records for a lecture."""
-    contributions = []
+    contributions = await get_contributions(db, lecture_id)
     return {"contributions": contributions}

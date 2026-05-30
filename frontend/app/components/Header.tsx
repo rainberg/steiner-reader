@@ -3,33 +3,35 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { clearAuth, fetchMe, getStoredUser, User } from '@/lib/api';
+import { clearAuth, fetchMe, getStoredUser, getUserCredits, updateStoredCredits, User } from '@/lib/api';
 import SearchModal from './SearchModal';
 
 export default function Header() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
+  const [credits, setCredits] = useState(0);
   const [pendingRecharges, setPendingRecharges] = useState(0);
 
   useEffect(() => {
     const stored = getStoredUser();
-    if (stored) {
-      setUser(stored);
-      fetchMe()
-        .then(nextUser => {
-          setUser(nextUser);
-          localStorage.setItem('steiner_user', JSON.stringify(nextUser));
-        })
-        .catch(() => {
-          clearAuth();
-          setUser(null);
-        });
-    }
+    if (!stored) return;
+    setUser(stored);
+    setCredits(getUserCredits());
+    fetchMe()
+      .then(nextUser => {
+        setUser(nextUser);
+        const c = typeof nextUser.credits === 'number' ? nextUser.credits : parseFloat(String(nextUser.credits)) || 0;
+        setCredits(c);
+        updateStoredCredits(c);
+      })
+      .catch(() => {
+        clearAuth();
+        setUser(null);
+      });
 
-    // Poll pending recharge count for admins
-    if (stored?.is_admin) {
+    if (stored.is_admin) {
       const poll = () => {
-        const token = localStorage.getItem('steiner_token');
+        const token = localStorage.getItem('access_token');
         if (!token) return;
         fetch('/api/recharge/admin/pending-requests', { headers: { Authorization: `Bearer ${token}` } })
           .then(r => r.json())
@@ -43,12 +45,24 @@ export default function Header() {
       return () => clearInterval(interval);
     }
 
+    const onStorage = () => {
+      const u = getStoredUser();
+      if (u) {
+        setUser(u);
+        setCredits(typeof u.credits === 'number' ? u.credits : parseFloat(String(u.credits)) || 0);
+      }
+    };
     const handleAuthChange = () => {
       const u = getStoredUser();
       setUser(u);
+      if (u) setCredits(typeof u.credits === 'number' ? u.credits : parseFloat(String(u.credits)) || 0);
     };
+    window.addEventListener('storage', onStorage);
     window.addEventListener('auth-changed', handleAuthChange);
-    return () => window.removeEventListener('auth-changed', handleAuthChange);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('auth-changed', handleAuthChange);
+    };
   }, []);
 
   const handleLogout = () => {
@@ -92,7 +106,7 @@ export default function Header() {
                   {user.username}
                 </Link>
                 <span className="text-xs bg-amber-50 text-amber-700 border border-amber-200/60 px-2 py-0.5 rounded-full">
-                  {user.credits} 点
+                  {credits.toFixed(0)} 点
                 </span>
                 <Link href="/profile" className="text-xs text-gray-400 hover:text-indigo-500 transition-colors ml-1">
                   个人中心

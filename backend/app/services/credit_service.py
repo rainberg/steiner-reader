@@ -235,13 +235,20 @@ async def add_contribution(
     lecture_id: int,
     amount: Decimal,
     access_type: str = "translate",
+    display_name: str = "",
+    book_id: int | None = None,
+    cost: int = 0,
+    grants_download: bool = False,
 ) -> Contribution:
     """Record a credit contribution for a user on a lecture."""
     entry = Contribution(
         user_id=user_id,
         lecture_id=lecture_id,
-        amount=amount,
-        access_type=access_type,
+        contribution_type=access_type,
+        display_name=display_name or None,
+        book_id=book_id,
+        cost=cost,
+        grants_download=grants_download,
     )
     db.add(entry)
     await db.flush()
@@ -309,12 +316,23 @@ async def get_access_types(
 
 async def get_contributions(
     db: AsyncSession,
-    user_id: str,
-) -> list[Contribution]:
-    """Return all contributions for a user, newest first."""
+    lecture_id: int,
+) -> list[dict]:
+    """Return all contributions for a lecture, newest first."""
     result = await db.execute(
         select(Contribution)
-        .where(Contribution.user_id == user_id)
+        .where(Contribution.lecture_id == lecture_id)
         .order_by(Contribution.created_at.desc())
     )
-    return list(result.scalars().all())
+    rows = result.scalars().all()
+    return [
+        {
+            "user_id": str(r.user_id),
+            "display_name": r.display_name or "",
+            "contribution_type": r.contribution_type,
+            "cost": r.cost,
+            "grants_download": r.grants_download,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
