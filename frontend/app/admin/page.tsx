@@ -93,7 +93,7 @@ export default function AdminPage() {
     );
   }, [users, search]);
 
-  const handleSetCredits = async (userId: number) => {
+  const handleSetCredits = async (userId: string) => {
     if (!newCredits || isNaN(parseInt(newCredits))) {
       setError("请输入有效的点数");
       return;
@@ -121,7 +121,7 @@ export default function AdminPage() {
     }
   };
 
-  const handleAddCredits = async (userId: number) => {
+  const handleAddCredits = async (userId: string) => {
     if (!addCreditsValue || isNaN(parseInt(addCreditsValue))) {
       setError("请输入有效的点数");
       return;
@@ -178,7 +178,7 @@ export default function AdminPage() {
     }
   };
 
-  const handleToggleAdmin = async (userId: number, username: string, currentIsAdmin: number) => {
+  const handleToggleAdmin = async (userId: string, username: string, currentIsAdmin: number) => {
     const action = currentIsAdmin ? "取消管理员权限" : "设为管理员";
     if (!window.confirm(`确定要${action}用户 "${username}" 吗？`)) return;
     try {
@@ -198,7 +198,7 @@ export default function AdminPage() {
     }
   };
 
-  const handleDeleteUser = async (userId: number, username: string) => {
+  const handleDeleteUser = async (userId: string, username: string) => {
     if (!window.confirm(`确定要删除用户 "${username}" 吗？此操作不可恢复！`)) return;
     try {
       const res = await fetch(`/api/admin/users/${userId}`, {
