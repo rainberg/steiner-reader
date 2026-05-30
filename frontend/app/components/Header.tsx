@@ -103,7 +103,7 @@ export default function Header() {
               ) : null}
               <div className="flex items-center gap-2 pl-2 border-l border-gray-200">
                 <Link href="/profile" className="text-sm text-gray-600 font-medium hover:text-indigo-600 transition-colors">
-                  {user.username}
+                  {user.display_name || user.username || '用户'}
                 </Link>
                 <span className="text-xs bg-amber-50 text-amber-700 border border-amber-200/60 px-2 py-0.5 rounded-full">
                   {credits.toFixed(0)} 点

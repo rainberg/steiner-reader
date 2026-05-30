@@ -7,7 +7,6 @@ from sqlalchemy.orm import selectinload
 
 from app.db.database import get_db
 from app.db.models import Lecture, Paragraph, Sentence
-from sqlalchemy import select
 from app.models.schemas import ParagraphResponse, SentenceResponse
 
 router = APIRouter(prefix="/api/lectures", tags=["lectures"])

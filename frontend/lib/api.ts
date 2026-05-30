@@ -410,6 +410,7 @@ export async function updateUserProfile(displayName?: string, oldPassword?: stri
     role: data.role,
     credits: data.credits,
     is_active: data.is_active,
+    is_admin: data.role === 'admin',
     created_at: data.created_at,
   };
   localStorage.setItem('auth_user', JSON.stringify(updatedUser));
@@ -436,6 +437,7 @@ export async function changeEmail(email: string, password?: string): Promise<Use
     role: data.role,
     credits: data.credits,
     is_active: data.is_active,
+    is_admin: data.role === 'admin',
     created_at: data.created_at,
   };
   localStorage.setItem('auth_user', JSON.stringify(updatedUser));

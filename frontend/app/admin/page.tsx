@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { adminAddCredits, adminUpdateUser, adminResetPassword, fetchCreditSettings, updateCreditSetting, CreditSetting } from "@/lib/api";
 
 interface User {
-  id: number;
+  id: string;
   username: string;
   email: string;
   credits: number;
@@ -18,11 +18,11 @@ export default function AdminPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [editUserId, setEditUserId] = useState<number | null>(null);
+  const [editUserId, setEditUserId] = useState<string | null>(null);
   const [newCredits, setNewCredits] = useState("");
   const [addCreditsValue, setAddCreditsValue] = useState("");
   const [success, setSuccess] = useState("");
-  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
   // Edit user modal state

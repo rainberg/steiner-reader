@@ -404,7 +404,7 @@ async def get_lecture(
     # Download permission
     can_download_pdf = False
     if user:
-        can_download_pdf = await check_download_access(db, user, lecture_id)
+        can_download_pdf = await check_download_access(db, user.id, lecture_id)
 
     # Edit costs
     edit_translation_cost = await compute_price(db, "edit_translation_coefficient", 1)

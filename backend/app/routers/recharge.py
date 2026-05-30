@@ -199,11 +199,36 @@ async def admin_pending_requests(
         .limit(200)
     )
     rows = result.scalars().all()
+
+    user_ids = list(set(r.user_id for r in rows))
+    user_map: dict[str, str] = {}
+    if user_ids:
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                for uid in user_ids:
+                    try:
+                        resp = await client.get(
+                            f"{AUTH_BASE}/api/admin/users",
+                            headers={"Authorization": f"Bearer {admin.raw_token}"},
+                            params={"search": uid},
+                        )
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            u_list = data if isinstance(data, list) else data.get("users", data.get("items", []))
+                            for u in u_list:
+                                if str(u.get("id")) == str(uid):
+                                    user_map[uid] = u.get("display_name") or u.get("username") or u.get("email", "")
+                                    break
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
     return [
         {
             "id": r.id,
             "user_id": r.user_id,
-            "username": "",
+            "username": user_map.get(r.user_id, ""),
             "amount": r.amount,
             "coefficient": r.coefficient,
             "credits": r.amount * (r.coefficient or 10),

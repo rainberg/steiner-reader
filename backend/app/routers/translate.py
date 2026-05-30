@@ -23,7 +23,7 @@ from app.services.auth_client import (
     refund_credits,
     get_credits_balance,
 )
-from app.services.credit_service import add_contribution
+from app.services.credit_service import add_contribution, atomic_deduct_credits
 from app.services.translator import translate_lecture_sentences
 
 logger = logging.getLogger(__name__)
@@ -69,6 +69,20 @@ async def translate_lecture(
         lec_result = await db.execute(select(Lecture).where(Lecture.id == lecture_id))
         lecture = lec_result.scalar_one_or_none()
         if lecture and not lecture.is_published:
+            balance = await get_credits_balance(user.raw_token)
+            available = float(balance.get("credits", 0)) - float(balance.get("credits_reserved", 0)) if balance else user.credits
+            if available < COST_PER_LECTURE:
+                raise HTTPException(
+                    status_code=402,
+                    detail=f"点数不足：翻译需要 {COST_PER_LECTURE} 点，当前可用 {available:.0f} 点"
+                )
+            deduct_result = await atomic_deduct_credits(
+                user.raw_token, COST_PER_LECTURE,
+                reference_id=f"translate-lecture-{lecture_id}",
+                description=f"翻译讲座 {lecture_id}",
+            )
+            if "error" in deduct_result:
+                raise HTTPException(status_code=402, detail=f"积分扣费失败")
             lecture.is_published = True
             await add_contribution(
                 db, user.id, lecture_id, COST_PER_LECTURE,
