@@ -57,6 +57,10 @@ async def submit_revision(
             reference_id=f"edit-sentence-{sentence_id}",
             description=f"修订句子 #{sentence_id}",
         )
+    except Exception as e:
+        logger.error(f"Failed to deduct credits for edit sentence {sentence_id}: {e}")
+        raise HTTPException(status_code=402, detail=f"积分扣费失败: {e}")
+
     if "error" in deduct_result:
         raise HTTPException(
             status_code=402,
@@ -152,7 +156,11 @@ async def vote_revision(
             reference_id=f"vote-revision-{revision_id}",
             description=f"投票修订 #{revision_id}",
         )
-    except ValueError:
+    except Exception as e:
+        logger.error(f"Failed to deduct credits for vote revision {revision_id}: {e}")
+        raise HTTPException(status_code=402, detail=f"积分扣费失败: {e}")
+
+    if "error" in deduct_result:
         raise HTTPException(status_code=402, detail=f"点数不足，需要 {cost} 点")
 
     db.add(RevisionVote(revision_id=revision_id, user_id=user.id))
