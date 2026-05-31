@@ -2,7 +2,7 @@
 
 import logging
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -14,6 +14,7 @@ from app.services.credit_service import (
     compute_price, atomic_deduct_credits, grant_access, add_contribution,
     check_download_access, get_access_types, get_contributions,
 )
+from app.services.pdf_generator import generate_bilingual_pdf
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -55,7 +56,7 @@ async def purchase_download(
 
     await grant_access(db, user.id, lecture_id, "download_purchase")
     await add_contribution(
-        db, user.id, lecture_id, cost,
+        db, user.id, lecture_id,
         access_type="download_purchase",
         display_name=user.display_name,
         book_id=lecture.book_id,
@@ -146,6 +147,63 @@ async def download_lecture_bilingual(
         media_type="text/html; charset=utf-8",
         headers={
             "Content-Disposition": f"attachment; filename*=UTF-8''{safe_title}.html",
+        },
+    )
+
+
+@router.get("/{lecture_id}/download-pdf")
+async def download_lecture_pdf(
+    lecture_id: int,
+    user: AuthUser = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Download bilingual (DE+ZH) lecture content as PDF. Requires download access."""
+    result = await db.execute(
+        select(Lecture)
+        .where(Lecture.id == lecture_id)
+        .options(
+            selectinload(Lecture.paragraphs)
+            .selectinload(Paragraph.sentences)
+        )
+    )
+    lecture = result.scalar_one_or_none()
+    if not lecture:
+        raise HTTPException(status_code=404, detail="章节不存在")
+
+    if not await check_download_access(db, user.id, lecture_id):
+        raise HTTPException(status_code=403, detail="无下载权限，请先贡献翻译或购买下载权限")
+
+    lecture_data = {
+        "title_de": lecture.title_de or f"Lecture {lecture_id}",
+        "title_zh": lecture.title_zh or "",
+        "location": lecture.location or "",
+        "lecture_date": str(lecture.lecture_date) if lecture.lecture_date else "",
+        "paragraphs": [],
+    }
+    for para in lecture.paragraphs:
+        para_data = {
+            "sentences": [
+                {
+                    "text_de": sent.text_de or "",
+                    "text_zh": sent.text_zh,
+                }
+                for sent in sorted(para.sentences, key=lambda s: s.order_index)
+            ]
+        }
+        lecture_data["paragraphs"].append(para_data)
+
+    pdf_bytes = generate_bilingual_pdf(lecture_data)
+
+    safe_title = "".join(
+        c for c in lecture_data["title_de"][:40] if c.isalnum() or c in " _-"
+    ).strip()
+
+    import io
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{safe_title}.pdf",
         },
     )
 

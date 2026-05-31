@@ -87,7 +87,7 @@ async def submit_revision(
     db.add(RevisionVote(revision_id=rev.id, user_id=user.id))
 
     # Record contribution
-    await add_contribution(db, user.id, lecture.id, "revision")
+    await add_contribution(db, user.id, lecture.id, access_type="revision")
     await grant_access(db, user.id, lecture.id, "reviser")
 
     # Write audit log

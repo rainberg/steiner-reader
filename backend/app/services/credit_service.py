@@ -26,17 +26,20 @@ AUTH_BASE = settings.AUTH_SERVICE_URL
 # Local price computation
 # ---------------------------------------------------------------------------
 
-async def compute_price(db: AsyncSession, action: str, **kwargs) -> Decimal:
+async def compute_price(db: AsyncSession, action: str, default: Decimal | None = None) -> Decimal:
     """Compute the credit price for *action* from the CreditSetting table.
 
     Supported actions include e.g. ``translate_per_lecture``,
-    ``download_per_lecture``, etc.  Raises ``ValueError`` when no row matches.
+    ``download_per_lecture``, etc.  When no row matches and *default* is
+    provided, returns *default* instead of raising ``ValueError``.
     """
     result = await db.execute(
         select(CreditSetting).where(CreditSetting.action == action)
     )
     setting = result.scalar_one_or_none()
     if not setting:
+        if default is not None:
+            return default
         raise ValueError(f"No credit setting found for action: {action}")
     return Decimal(str(setting.price))
 
@@ -233,7 +236,6 @@ async def add_contribution(
     db: AsyncSession,
     user_id: str,
     lecture_id: int,
-    amount: Decimal,
     access_type: str = "translate",
     display_name: str = "",
     book_id: int | None = None,

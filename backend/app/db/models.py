@@ -203,3 +203,33 @@ class RechargeRequest(Base):
     admin_note = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class TranslationPublication(Base):
+    __tablename__ = "translation_publications"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    lecture_id = Column(Integer, ForeignKey("lectures.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    status = Column(String(20), default="translating", server_default="translating", nullable=False)
+    user_id = Column(String(36), nullable=True, index=True)
+    display_name = Column(String(100), nullable=True)
+    published_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    lecture = relationship("Lecture", foreign_keys=[lecture_id])
+
+
+class UserTranslationJob(Base):
+    __tablename__ = "user_translation_jobs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    lecture_id = Column(Integer, ForeignKey("lectures.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String(36), nullable=True, index=True)
+    display_name = Column(String(100), nullable=True)
+    status = Column(String(20), default="pending", server_default="pending", nullable=False, index=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    lecture = relationship("Lecture", foreign_keys=[lecture_id])

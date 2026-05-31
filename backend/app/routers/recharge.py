@@ -167,8 +167,8 @@ async def my_recharge_requests(
             "credits": r.amount * (r.coefficient or 10),
             "status": r.status,
             "admin_note": r.admin_note,
-            "created_at": r.created_at,
-            "updated_at": r.updated_at,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "updated_at": r.updated_at.isoformat() if r.updated_at else None,
         }
         for r in requests
     ]

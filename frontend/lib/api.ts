@@ -124,6 +124,7 @@ export interface TranslationStatus {
   translated: number;
   completed: boolean;
   is_translating?: boolean;
+  is_running?: boolean;
 }
 
 export interface TranslateResult {
@@ -524,15 +525,15 @@ export async function fetchBook(bookId: number): Promise<Book> {
 
 export async function fetchLecture(bookIdOrLectureId: number, maybeLectureId?: number): Promise<Lecture> {
   const url = maybeLectureId === undefined
-    ? `${API_BASE}/api/lectures/${bookIdOrLectureId}`
-    : `${API_BASE}/api/books/${bookIdOrLectureId}/lectures/${maybeLectureId}`;
-  const res = await fetch(url, { cache: 'no-store' });
+    ? `/api/lectures/${bookIdOrLectureId}`
+    : `/api/books/${bookIdOrLectureId}/lectures/${maybeLectureId}`;
+  const res = await authFetch(url, { cache: 'no-store' });
   if (!res.ok) throw new Error('Failed to fetch lecture');
   return res.json();
 }
 
 export async function fetchParagraphs(lectureId: number): Promise<Paragraph[]> {
-  const res = await fetch(`${API_BASE}/api/lectures/${lectureId}/paragraphs`, { cache: 'no-store' });
+  const res = await authFetch(`/api/lectures/${lectureId}/paragraphs`, { cache: 'no-store' });
   if (!res.ok) throw new Error('Failed to fetch paragraphs');
   return res.json();
 }
@@ -564,7 +565,7 @@ export async function getTranslationCost(lectureId: number): Promise<Translation
 }
 
 export async function getTranslationStatus(lectureId: number): Promise<TranslationStatus> {
-  const res = await fetch(`${API_BASE}/api/lectures/${lectureId}/translation-status?_t=${Date.now()}`, { cache: 'no-store' });
+  const res = await authFetch(`/api/lectures/${lectureId}/translation-status?_t=${Date.now()}`, { cache: 'no-store' });
   if (!res.ok) throw new Error('Failed to fetch status');
   return res.json();
 }
@@ -694,6 +695,15 @@ export async function getDownloadPermission(lectureId: number): Promise<Download
   return res.json();
 }
 
+export async function downloadLecturePdf(lectureId: number): Promise<Blob> {
+  const res = await authFetch(`/api/lectures/${lectureId}/download-pdf`, { cache: 'no-store' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'PDF 下载失败' }));
+    throw new Error(err.detail || 'PDF 下载失败');
+  }
+  return res.blob();
+}
+
 export async function editSentence(
   sentenceId: number,
   fieldOrObj: string | { field: string; new_value: string },
@@ -721,7 +731,7 @@ export async function fetchSentenceEdits(sentenceId: number): Promise<EditLogEnt
 }
 
 export async function fetchContributions(lectureId: number): Promise<ContributionDisplay[]> {
-  const res = await fetch(`${API_BASE}/api/lectures/${lectureId}/contributions`, { cache: 'no-store' });
+  const res = await authFetch(`/api/lectures/${lectureId}/contributions`, { cache: 'no-store' });
   if (!res.ok) throw new Error('Failed to fetch contributions');
   return res.json();
 }

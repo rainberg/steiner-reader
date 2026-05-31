@@ -4,6 +4,9 @@ Uses Auth Service for credits management:
 - Reserve credits before translation starts
 - Settle (actual deduction) after translation completes
 - Refund on failure
+
+Uses database-backed job tracking (UserTranslationJob) instead of
+in-memory sets, so translation state survives server restarts.
 """
 
 import asyncio
@@ -24,6 +27,15 @@ from app.services.auth_client import (
     get_credits_balance,
 )
 from app.services.credit_service import add_contribution, atomic_deduct_credits
+from app.services.translation_service import (
+    is_lecture_running,
+    start_translation_job,
+    complete_translation_job,
+    fail_translation_job,
+    detect_orphan_jobs,
+    set_publication_status,
+    get_publication_status,
+)
 from app.services.translator import translate_lecture_sentences
 
 logger = logging.getLogger(__name__)
@@ -33,11 +45,6 @@ router = APIRouter(prefix="/api", tags=["translation"])
 COST_PER_LECTURE = 10
 
 
-_running_tasks: set[int] = set()
-
-_running_task_info: dict[int, dict] = {}
-
-
 @router.post("/lectures/{lecture_id}/translate")
 async def translate_lecture(
     lecture_id: int,
@@ -45,7 +52,9 @@ async def translate_lecture(
     db: AsyncSession = Depends(get_db),
 ):
     """Start translating a lecture (costs credits via auth-service, runs in background)."""
-    if lecture_id in _running_tasks:
+    await detect_orphan_jobs(db)
+
+    if await is_lecture_running(db, lecture_id):
         raise HTTPException(status_code=409, detail="该章节正在翻译中，请等待完成")
 
     total_result = await db.execute(
@@ -84,8 +93,9 @@ async def translate_lecture(
             if "error" in deduct_result:
                 raise HTTPException(status_code=402, detail=f"积分扣费失败")
             lecture.is_published = True
+            await set_publication_status(db, lecture_id, "published", user.id, user.display_name)
             await add_contribution(
-                db, user.id, lecture_id, COST_PER_LECTURE,
+                db, user.id, lecture_id,
                 access_type="translate",
                 display_name=user.display_name,
                 book_id=lecture.book_id,
@@ -119,12 +129,11 @@ async def translate_lecture(
         error_msg = reserve_result.get("error", "积分预扣失败") if reserve_result else "积分预扣失败"
         raise HTTPException(status_code=402, detail=f"积分预扣失败: {error_msg}")
 
-    _running_task_info[lecture_id] = {
-        "token": user.raw_token,
-        "user_id": user.id,
-        "display_name": user.display_name,
-    }
-    asyncio.create_task(_do_translate_lecture(lecture_id))
+    await start_translation_job(db, lecture_id, user.id, user.display_name)
+    await set_publication_status(db, lecture_id, "translating", user.id, user.display_name)
+    await db.commit()
+
+    asyncio.create_task(_do_translate_lecture(lecture_id, user.raw_token, user.id, user.display_name))
 
     balance = await get_credits_balance(user.raw_token)
     new_credits = balance.get("credits", user.credits) if balance else user.credits
@@ -205,11 +214,14 @@ async def lecture_translation_status(
     )
     translated = translated_result.scalar() or 0
 
+    is_running = await is_lecture_running(db, lecture_id)
+
     result_data = {
         "lecture_id": lecture_id,
         "total": total,
         "translated": translated,
         "completed": translated == total and total > 0,
+        "is_running": is_running,
     }
     return JSONResponse(
         content=result_data,
@@ -217,12 +229,7 @@ async def lecture_translation_status(
     )
 
 
-async def _do_translate_lecture(lecture_id: int):
-    _running_tasks.add(lecture_id)
-    task_info = _running_task_info.pop(lecture_id, {})
-    token = task_info.get("token")
-    user_id = task_info.get("user_id")
-    display_name = task_info.get("display_name", "")
+async def _do_translate_lecture(lecture_id: int, token: str, user_id: str, display_name: str):
     success = False
 
     try:
@@ -255,6 +262,9 @@ async def _do_translate_lecture(lecture_id: int):
                 if not lecture.is_published:
                     lecture.is_published = True
                     await db.commit()
+                await complete_translation_job(db, lecture_id)
+                await set_publication_status(db, lecture_id, "published", user_id, display_name)
+                await db.commit()
                 return
 
             logger.info(f"Lecture {lecture_id}: translating {len(untranslated)} sentences...")
@@ -277,9 +287,13 @@ async def _do_translate_lecture(lecture_id: int):
                 lecture.is_published = True
                 await db.commit()
 
+            await complete_translation_job(db, lecture_id)
+            await set_publication_status(db, lecture_id, "published", user_id, display_name)
+            await db.commit()
+
             if user_id:
                 await add_contribution(
-                    db, user_id, lecture_id, COST_PER_LECTURE,
+                    db, user_id, lecture_id,
                     access_type="translate",
                     display_name=display_name,
                     book_id=lecture.book_id,
@@ -295,9 +309,16 @@ async def _do_translate_lecture(lecture_id: int):
         logger.error(f"Lecture {lecture_id}: translation failed: {e}")
         import traceback
         logger.error(traceback.format_exc())
-    finally:
-        _running_tasks.discard(lecture_id)
 
+        try:
+            async with AsyncSessionLocal() as db:
+                await fail_translation_job(db, lecture_id, error=str(e))
+                await set_publication_status(db, lecture_id, "failed")
+                await db.commit()
+        except Exception as db_err:
+            logger.error(f"Lecture {lecture_id}: failed to update job status: {db_err}")
+
+    finally:
         if token:
             if success:
                 settle_result = await settle_credits(
