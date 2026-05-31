@@ -17,8 +17,9 @@ async def is_lecture_running(db: AsyncSession, lecture_id: int) -> bool:
 async def start_translation_job(
     db: AsyncSession,
     lecture_id: int,
-    user_id: str | None = None,
-    display_name: str | None = None,
+    user_id: str,
+    book_id: int,
+    mode: str = "simulate",
 ) -> UserTranslationJob:
     if await is_lecture_running(db, lecture_id):
         raise ValueError(f"Lecture {lecture_id} already has a running job")
@@ -26,7 +27,8 @@ async def start_translation_job(
     job = UserTranslationJob(
         lecture_id=lecture_id,
         user_id=user_id,
-        display_name=display_name,
+        book_id=book_id,
+        mode=mode,
         status="running",
     )
     db.add(job)
@@ -95,9 +97,9 @@ async def get_publication_status(db: AsyncSession, lecture_id: int) -> str | Non
 async def set_publication_status(
     db: AsyncSession,
     lecture_id: int,
+    book_id: int,
     status: str,
     user_id: str | None = None,
-    display_name: str | None = None,
 ) -> TranslationPublication:
     result = await db.execute(
         select(TranslationPublication)
@@ -108,16 +110,14 @@ async def set_publication_status(
         pub.status = status
         if status == "published":
             pub.published_at = datetime.utcnow()
-        if user_id:
-            pub.user_id = user_id
-        if display_name:
-            pub.display_name = display_name
+        if user_id and not pub.first_contributor_user_id:
+            pub.first_contributor_user_id = user_id
     else:
         pub = TranslationPublication(
             lecture_id=lecture_id,
+            book_id=book_id,
             status=status,
-            user_id=user_id,
-            display_name=display_name,
+            first_contributor_user_id=user_id,
             published_at=datetime.utcnow() if status == "published" else None,
         )
         db.add(pub)

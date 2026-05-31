@@ -209,27 +209,34 @@ class TranslationPublication(Base):
     __tablename__ = "translation_publications"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    lecture_id = Column(Integer, ForeignKey("lectures.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
-    status = Column(String(20), default="translating", server_default="translating", nullable=False)
-    user_id = Column(String(36), nullable=True, index=True)
-    display_name = Column(String(100), nullable=True)
+    book_id = Column(Integer, ForeignKey("books.id", ondelete="CASCADE"), nullable=False)
+    lecture_id = Column(Integer, ForeignKey("lectures.id", ondelete="CASCADE"), nullable=False, index=True)
+    scope = Column(String(20), default="lecture", server_default="lecture")
+    status = Column(String(20), default="translating", server_default="translating", nullable=False, index=True)
+    first_contributor_user_id = Column(String(36), nullable=True)
     published_at = Column(DateTime, nullable=True)
+    error_message = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     lecture = relationship("Lecture", foreign_keys=[lecture_id])
+    book = relationship("Book", foreign_keys=[book_id])
 
 
 class UserTranslationJob(Base):
     __tablename__ = "user_translation_jobs"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(36), nullable=False, index=True)
+    book_id = Column(Integer, ForeignKey("books.id", ondelete="CASCADE"), nullable=False)
     lecture_id = Column(Integer, ForeignKey("lectures.id", ondelete="CASCADE"), nullable=False, index=True)
-    user_id = Column(String(36), nullable=True, index=True)
-    display_name = Column(String(100), nullable=True)
-    status = Column(String(20), default="pending", server_default="pending", nullable=False, index=True)
+    mode = Column(String(20), default="simulate", server_default="simulate")
+    status = Column(String(20), default="running", server_default="running", nullable=False, index=True)
+    total_sentences = Column(Integer, default=0, server_default="0")
+    completed_sentences = Column(Integer, default=0, server_default="0")
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     lecture = relationship("Lecture", foreign_keys=[lecture_id])
+    book = relationship("Book", foreign_keys=[book_id])

@@ -73,10 +73,12 @@ async def translate_lecture(
     )
     translated = translated_result.scalar() or 0
 
+    lec_result = await db.execute(select(Lecture).where(Lecture.id == lecture_id))
+    lecture = lec_result.scalar_one_or_none()
+    book_id = lecture.book_id if lecture else None
+
     remaining = total - translated
     if remaining == 0:
-        lec_result = await db.execute(select(Lecture).where(Lecture.id == lecture_id))
-        lecture = lec_result.scalar_one_or_none()
         if lecture and not lecture.is_published:
             balance = await get_credits_balance(user.raw_token)
             available = float(balance.get("credits", 0)) - float(balance.get("credits_reserved", 0)) if balance else user.credits
@@ -93,7 +95,7 @@ async def translate_lecture(
             if "error" in deduct_result:
                 raise HTTPException(status_code=402, detail=f"积分扣费失败")
             lecture.is_published = True
-            await set_publication_status(db, lecture_id, "published", user.id, user.display_name)
+            await set_publication_status(db, lecture_id, book_id, "published", user.id)
             await add_contribution(
                 db, user.id, lecture_id,
                 access_type="translate",
@@ -129,11 +131,11 @@ async def translate_lecture(
         error_msg = reserve_result.get("error", "积分预扣失败") if reserve_result else "积分预扣失败"
         raise HTTPException(status_code=402, detail=f"积分预扣失败: {error_msg}")
 
-    await start_translation_job(db, lecture_id, user.id, user.display_name)
-    await set_publication_status(db, lecture_id, "translating", user.id, user.display_name)
+    await start_translation_job(db, lecture_id, user.id, book_id)
+    await set_publication_status(db, lecture_id, book_id, "translating", user.id)
     await db.commit()
 
-    asyncio.create_task(_do_translate_lecture(lecture_id, user.raw_token, user.id, user.display_name))
+    asyncio.create_task(_do_translate_lecture(lecture_id, book_id, user.raw_token, user.id, user.display_name))
 
     balance = await get_credits_balance(user.raw_token)
     new_credits = balance.get("credits", user.credits) if balance else user.credits
@@ -229,7 +231,7 @@ async def lecture_translation_status(
     )
 
 
-async def _do_translate_lecture(lecture_id: int, token: str, user_id: str, display_name: str):
+async def _do_translate_lecture(lecture_id: int, book_id: int, token: str, user_id: str, display_name: str):
     success = False
 
     try:
@@ -263,7 +265,7 @@ async def _do_translate_lecture(lecture_id: int, token: str, user_id: str, displ
                     lecture.is_published = True
                     await db.commit()
                 await complete_translation_job(db, lecture_id)
-                await set_publication_status(db, lecture_id, "published", user_id, display_name)
+                await set_publication_status(db, lecture_id, book_id, "published", user_id)
                 await db.commit()
                 return
 
@@ -288,7 +290,7 @@ async def _do_translate_lecture(lecture_id: int, token: str, user_id: str, displ
                 await db.commit()
 
             await complete_translation_job(db, lecture_id)
-            await set_publication_status(db, lecture_id, "published", user_id, display_name)
+            await set_publication_status(db, lecture_id, book_id, "published", user_id)
             await db.commit()
 
             if user_id:
@@ -313,7 +315,10 @@ async def _do_translate_lecture(lecture_id: int, token: str, user_id: str, displ
         try:
             async with AsyncSessionLocal() as db:
                 await fail_translation_job(db, lecture_id, error=str(e))
-                await set_publication_status(db, lecture_id, "failed")
+                lec_result = await db.execute(select(Lecture).where(Lecture.id == lecture_id))
+                lecture = lec_result.scalar_one_or_none()
+                bid = lecture.book_id if lecture else 0
+                await set_publication_status(db, lecture_id, bid, "failed")
                 await db.commit()
         except Exception as db_err:
             logger.error(f"Lecture {lecture_id}: failed to update job status: {db_err}")
