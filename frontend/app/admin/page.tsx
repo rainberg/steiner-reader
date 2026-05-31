@@ -551,8 +551,8 @@ export default function AdminPage() {
       <CreditSettingsTab
         settings={creditSettings}
         loading={settingsLoading}
-        onUpdate={async (key: string, value: number) => {
-          await updateCreditSetting(key, value);
+        onUpdate={async (settingId: number, value: number) => {
+          await updateCreditSetting(settingId, value);
           await loadCreditSettings();
         }}
       />
@@ -584,26 +584,26 @@ function CreditSettingsTab({
 }: {
   settings: CreditSetting[];
   loading: boolean;
-  onUpdate: (key: string, value: number) => Promise<void>;
+  onUpdate: (settingId: number, value: number) => Promise<void>;
 }) {
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [msg, setMsg] = useState("");
 
   const LABELS: Record<string, string> = {
-    translate_coefficient: "翻译系数 (每句×系数)",
+    translate_per_sentence: "翻译每句单价（系数）",
+    download_per_lecture: "下载单个讲座",
     edit_translation_coefficient: "编辑译文系数 (每句×系数)",
     edit_source_coefficient: "编辑原文系数 (每句×系数)",
-    download_lecture_price: "单章下载 (0=免费)",
     download_book_price: "全书下载 (0=免费)",
     recharge_coefficient: "充值兑换系数 (1元=积分)",
   };
 
-  const handleSave = async (key: string) => {
-    const val = parseInt(editValue, 10);
+  const handleSave = async (settingId: number) => {
+    const val = parseFloat(editValue);
     if (isNaN(val) || val < 0) { setMsg("请输入有效数字"); return; }
     try {
-      await onUpdate(key, val);
+      await onUpdate(settingId, val);
       setEditingKey(null);
       setMsg("保存成功");
     } catch {
@@ -636,27 +636,28 @@ function CreditSettingsTab({
           </thead>
           <tbody className="divide-y divide-gray-100">
             {settings.map((s) => (
-              <tr key={s.key} className="hover:bg-gray-50">
-                <td className="px-6 py-4 text-sm font-medium text-gray-900">{s.key}</td>
-                <td className="px-6 py-4 text-sm text-gray-500">{LABELS[s.key || ""] || s.description}</td>
+              <tr key={s.action} className="hover:bg-gray-50">
+                <td className="px-6 py-4 text-sm font-medium text-gray-900">{s.action}</td>
+                <td className="px-6 py-4 text-sm text-gray-500">{LABELS[s.action] || s.description}</td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <span className="text-sm font-mono text-gray-700">{s.value}</span>
+                  <span className="text-sm font-mono text-gray-700">{s.price}</span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  {editingKey === s.key ? (
+                  {editingKey === s.action ? (
                     <div className="flex items-center gap-2">
                       <input
                         type="number"
+                        step="0.01"
                         value={editValue}
                         onChange={e => setEditValue(e.target.value)}
                         className="w-20 px-2 py-1 border rounded text-sm"
                       />
-                      <button onClick={() => handleSave(s.key || "")} className="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700">保存</button>
+                      <button onClick={() => handleSave(s.id)} className="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700">保存</button>
                       <button onClick={() => setEditingKey(null)} className="px-2 py-1 text-gray-500 text-xs">取消</button>
                     </div>
                   ) : (
                     <button
-                      onClick={() => { setEditingKey(s.key || null); setEditValue(String(s.value)); }}
+                      onClick={() => { setEditingKey(s.action); setEditValue(String(s.price)); }}
                       className="text-blue-600 hover:text-blue-800 text-sm"
                     >
                       修改
