@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import books, translate, images, auth, admin, lectures, paragraphs, recharge
+from app.routers import books, translate, images, auth, admin, lectures, paragraphs, recharge, downloads, edits
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -30,6 +30,8 @@ app.include_router(admin.router)
 app.include_router(lectures.router)
 app.include_router(paragraphs.router)
 app.include_router(recharge.router)
+app.include_router(downloads.router)
+app.include_router(edits.router)
 
 
 @app.get("/")

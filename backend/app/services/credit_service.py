@@ -194,11 +194,34 @@ async def atomic_deduct_credits(
     delegates to auth-service reserve + settle.  If reserve succeeds but
     settle fails, the reserved credits remain frozen (not lost) and can be
     settled or refunded later.
+
+    If reserve returns 409 (reference_id already exists), it means a previous
+    reserve/settle or reserve/refund already used this reference_id.  We try
+    to settle directly — if it was already settled, settle returns the same
+    result; if it was refunded, we re-reserve with a new reference_id.
     """
     reserve_result = await reserve_credits(token, amount, reference_id, description)
-    if "error" in reserve_result:
+    if "error" not in reserve_result:
+        settle_result = await settle_credits(
+            token,
+            reserved_amount=amount,
+            actual_amount=amount,
+            reference_id=reference_id,
+            description=description,
+        )
+        if "error" in settle_result:
+            logger.warning(
+                "Reserve succeeded but settle failed for ref=%s — credits remain reserved",
+                reference_id,
+            )
+            return settle_result
+        return settle_result
+
+    status_code = reserve_result.get("status_code")
+    if status_code != 409:
         return reserve_result
 
+    logger.info("reserve returned 409 for ref=%s, attempting settle directly", reference_id)
     settle_result = await settle_credits(
         token,
         reserved_amount=amount,
@@ -206,13 +229,15 @@ async def atomic_deduct_credits(
         reference_id=reference_id,
         description=description,
     )
-    if "error" in settle_result:
-        logger.warning(
-            "Reserve succeeded but settle failed for ref=%s — credits remain reserved",
-            reference_id,
-        )
+    if "error" not in settle_result:
         return settle_result
 
+    settle_status = settle_result.get("status_code")
+    if settle_status == 409:
+        logger.info("settle also returned 409 for ref=%s — already processed, treating as success", reference_id)
+        return {"success": True, "reference_id": reference_id, "note": "already_processed"}
+
+    logger.warning("settle failed after 409 reserve for ref=%s: %s", reference_id, settle_result)
     return settle_result
 
 

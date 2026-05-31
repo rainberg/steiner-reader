@@ -77,16 +77,17 @@ export default function LecturePage() {
     }, 3000);
   }, [lectureId]);
 
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const loadLecture = useCallback(async () => {
     try {
       const data = await fetchLecture(lectureId);
       setLecture(data);
 
-      // Check publication from lecture response
       setIsPublished(data.is_published === true);
 
       const [paras, cost, perm, contribs] = await Promise.all([
-        fetchParagraphs(lectureId),
+        fetchParagraphs(lectureId).catch((e) => { console.error('fetchParagraphs failed:', e); return []; }),
         getTranslationCost(lectureId).catch(() => null),
         getDownloadPermission(lectureId).catch(() => null),
         fetchContributions(lectureId).catch(() => []),
@@ -102,7 +103,6 @@ export default function LecturePage() {
         setDownloadPerm(perm);
       }
 
-      // Store costs from lecture response
       if (typeof data.edit_translation_cost === 'number') setEditTransCost(data.edit_translation_cost);
       if (typeof data.edit_source_cost === 'number') setEditSourceCost(data.edit_source_cost);
 
@@ -115,12 +115,13 @@ export default function LecturePage() {
       } catch {
         // Status is auxiliary; the reader can still render without it.
       }
-    } catch {
-      router.push(`/books/${bookId}`);
+    } catch (err) {
+      console.error('loadLecture failed:', err);
+      setLoadError(err instanceof Error ? err.message : '加载失败');
     } finally {
       setLoading(false);
     }
-  }, [bookId, lectureId, router, startPolling]);
+  }, [bookId, lectureId, startPolling]);
 
   useEffect(() => {
     loadLecture();
@@ -206,7 +207,19 @@ export default function LecturePage() {
       </div>
     );
   }
-  if (!lecture) return null;
+  if (!lecture) {
+    if (loadError) {
+      return (
+        <main className="min-h-screen flex items-center justify-center">
+          <div className="text-center">
+            <p className="text-red-600 mb-4">{loadError}</p>
+            <Link href={`/books/${bookId}`} className="text-blue-600 hover:underline text-sm">返回目录</Link>
+          </div>
+        </main>
+      );
+    }
+    return null;
+  }
 
   const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
   const totalSentences = paragraphs.reduce((sum, p) => sum + (p.sentences?.length || 0), 0);
