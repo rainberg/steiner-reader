@@ -1,0 +1,28 @@
+- [x] TranslationPublication 模型已创建，包含 book_id, lecture_id, scope, status, first_contributor_user_id(String(36)), published_at, error_message, created_at, updated_at 字段
+- [x] UserTranslationJob 模型已创建，包含 user_id(String(36)), book_id, lecture_id, mode, status, total_sentences, completed_sentences, error_message, created_at, updated_at 字段
+- [x] Contribution 模型已扩展 book_id, cost, grants_download 字段
+- [x] content_access.py 服务已创建，包含 get_publication_for_lecture, ensure_translation_publication, publish_lecture_translation, add_contribution, can_download_lecture, get_contributors, get_lecture_book_id 函数
+- [x] translate.py 中 _running_tasks 和 _running_task_tokens 已移除
+- [x] translate_lecture 端点使用 translation_publications 和 user_translation_jobs
+- [x] translation-status 端点返回 status, mode, translation_published, is_running 字段
+- [x] translation-cost 端点返回 translation_published, download_cost 等新字段
+- [x] 后台翻译任务从数据库读取 job 并更新进度
+- [x] 后端模拟翻译更新 user_translation_jobs 进度
+- [x] purchase-download 端点已实现
+- [x] download-pdf 端点已实现（reportlab 德中对照 PDF）
+- [x] PUT /sentences/{id}/translation 和 /source 端点已实现
+- [x] 孤儿任务检测：running 超过 30 分钟标记为 failed
+- [x] lectures.py 中翻译可见性由 translation_publications 表判断
+- [x] get_lecture_simple 返回 translation_published, first_contributor, contributors, can_download_pdf, can_edit, download_notice
+- [x] 前端 TranslationStatus 接口包含 status, mode, translation_published
+- [x] 前端 TranslationCost 接口包含 translation_published, download_cost
+- [x] 前端 Lecture 接口包含 translation_published, first_contributor, contributors, can_download_pdf, can_edit, download_notice
+- [x] 前端新增 purchaseLectureDownload, downloadLecturePdf, editSentenceTranslation, editSentenceSource 函数
+- [x] 前端阅读页使用 translation_published 替代 is_published
+- [x] 前端移除 simulateProgress，改为纯轮询后端 translation-status
+- [x] 前端展示贡献者信息
+- [x] 前端展示下载区域（有权限/无权限两种状态）
+- [x] 前端展示下载提醒文案
+- [x] 前端句子编辑功能可用
+- [x] 数据迁移脚本已编写并执行
+- [x] 生产环境部署完成，功能验证通过

@@ -1,0 +1,525 @@
+#!/usr/bin/env python3
+"""
+Steiner Reader - 批量书籍解析和导入
+处理 /opt/steiner-reader/books/docx/ 下的所有 .docx 文件
+"""
+
+from docx import Document
+import os, re, json, glob, shutil, zipfile, hashlib, traceback
+from pathlib import Path
+
+DOCX_DIR = "/opt/steiner-reader/books/docx"
+IMAGE_BASE = "/opt/steiner-reader/images"
+DB_CONFIG = {
+    "host": "localhost", "user": "steiner",
+    "password": os.getenv("DB_PASSWORD", "change_me"), "database": "steiner_reader"
+}
+
+# 德语月份映射
+DE_MONTHS = {
+    'januar': 1, 'februar': 2, 'märz': 3, 'maerz': 3, 'april': 4,
+    'mai': 5, 'juni': 6, 'juli': 7, 'august': 8, 'september': 9,
+    'oktober': 10, 'november': 11, 'dezember': 12
+}
+
+def parse_german_date(date_str):
+    """解析德语日期如 '24. Juni 1924' → '1924-06-24'"""
+    if not date_str:
+        return None
+    m = re.search(r'(\d{1,2})\.\s*(\w+)\s*(\d{4})', date_str)
+    if m:
+        day = int(m.group(1))
+        month_name = m.group(2).lower()
+        year = int(m.group(3))
+        month = DE_MONTHS.get(month_name)
+        if month:
+            return f"{year}-{month:02d}-{day:02d}"
+    return None
+
+ABBREVIATIONS = [
+    'Dr.', 'Prof.', 'Fr.', 'Hr.', 'Sr.', 'Nr.',
+    'z.B.', 'd.h.', 'u.a.', 'usw.', 'etc.', 'bzw.', 's.o.', 's.u.',
+    'Jan.', 'Feb.', 'Mär.', 'Apr.', 'Jun.', 'Jul.', 'Aug.', 'Sep.', 'Okt.', 'Nov.', 'Dez.',
+    'ca.', 'Chr.', 'Jh.', 'Bd.', 'Hrsg.',
+]
+
+ARTICLES = {'der','die','das','dem','den','des','ein','eine','einem','einen','einer','eines'}
+PREPOSITIONS = {'in','im','an','auf','aus','bei','mit','nach','seit','von','vor','zu','zum','zur',
+                'für','gegen','ohne','um','durch','über','unter','zwischen','hinter','neben',
+                'außer','bis','entlang','gemäß','laut','samt','nebst'}
+CONJUNCTIONS = {'und','oder','aber','denn','dass','ob','weil','wenn','als','wie','da',
+                'bevor','nachdem','während','damit','obwohl','sobald','sooft','sowie',
+                'indem','weder','sowohl','nicht','nur','auch','noch','schon','doch'}
+
+# 德语序数词映射
+ORDINAL_MAP = {}
+_ordinals = [
+    ('ERSTER',1),('ZWEITER',2),('DRITTER',3),('VIERTER',4),('FÜNFTER',5),('FUENFTER',5),
+    ('SECHSTER',6),('SIEBENTER',7),('ACHTER',8),('NEUNTER',9),('ZEHNTER',10),
+    ('ELFTER',11),('ZWÖLFTER',12),('ZWOLFTER',12),('DREIZEHNTER',13),('VIERZEHNTER',14),
+    ('FÜNFZEHNTER',15),('FUENFZEHNTER',15),('SECHZEHNTER',16),('SIEBZEHNTER',17),
+    ('ACHTZEHNTER',18),('NEUNZEHNTER',19),('ZWANZIGSTER',20),
+    ('EINUNDZWANZIGSTER',21),('ZWEIUNDZWANZIGSTER',22),('DREIUNDZWANZIGSTER',23),
+    ('VIERUNDZWANZIGSTER',24),('FÜNFUNDZWANZIGSTER',25),('SECHSUNDZWANZIGSTER',26),
+    ('SIEBENUNDZWANZIGSTER',27),('ACHTUNDZWANZIGSTER',28),('NEUNUNDZWANZIGSTER',29),
+    ('DREISSIGSTER',30),('EINUNDREISSIGSTER',31),('ZWEIUNDREISSIGSTER',32),
+    ('DREIUNDREISSIGSTER',33),('VIERUNDREISSIGSTER',34),('FÜNFUNDREISSIGSTER',35),
+    ('SECHSUNDREISSIGSTER',36),('SIEBENUNDREISSIGSTER',37),('ACHTUNDREISSIGSTER',38),
+    ('NEUNUNDREISSIGSTER',39),('VIERZIGSTER',40),
+    ('EINUNDVIERZIGSTER',41),('ZWEIUNDVIERZIGSTER',42),('DREIUNDVIERZIGSTER',43),
+    ('VIERUNDVIERZIGSTER',44),('FÜNFUNDVIERZIGSTER',45),('SECHSUNDVIERZIGSTER',46),
+    ('SIEBENUNDVIERZIGSTER',47),('ACHTUNDVIERZIGSTER',48),('NEUNUNDVIERZIGSTER',49),
+    ('FÜNFZIGSTER',50),
+]
+for name, num in _ordinals:
+    ORDINAL_MAP[name] = num
+
+
+def protect_abbreviations(text):
+    protected = {}
+    for i, abbr in enumerate(ABBREVIATIONS):
+        placeholder = f"__ABBR{i}__"
+        if abbr in text:
+            text = text.replace(abbr, placeholder)
+            protected[placeholder] = abbr
+    return text, protected
+
+
+def restore_abbreviations(text, protected):
+    for placeholder, abbr in protected.items():
+        text = text.replace(placeholder, abbr)
+    return text
+
+
+def split_sentences(text):
+    if not text.strip():
+        return []
+    text, protected = protect_abbreviations(text)
+    text = re.sub(r'\n+', ' ', text).strip()
+    
+    # 简化版：按 .!? 分割，后面跟空格+大写或引号
+    sentences = re.split(r'(?<=[.!?])\s+(?=[„"»«A-ZÄÖÜ])', text)
+    sentences = [s.strip() for s in sentences if s.strip()]
+    sentences = [restore_abbreviations(s, protected) for s in sentences]
+    sentences = merge_truncated(sentences)
+    return sentences
+
+
+def merge_truncated(sentences):
+    if not sentences or len(sentences) < 2:
+        return sentences
+    merged = []
+    i = 0
+    while i < len(sentences):
+        current = sentences[i].strip() if i < len(sentences) else ""
+        if not current:
+            i += 1
+            continue
+        if i + 1 < len(sentences):
+            next_sent = sentences[i + 1].strip()
+            if not next_sent:
+                merged.append(current)
+                i += 1
+                continue
+            should_merge = False
+            if current.endswith('-'):
+                should_merge = True
+            elif not current[-1] in '.!?' and next_sent[0].islower():
+                should_merge = True
+            else:
+                words = current.rstrip('.,;:!? ').split()
+                last_word = words[-1].lower() if words else ''
+                if last_word in ARTICLES or last_word in PREPOSITIONS or last_word in CONJUNCTIONS:
+                    should_merge = True
+            if should_merge:
+                if current.endswith('-'):
+                    sentences[i + 1] = current[:-1] + next_sent
+                else:
+                    sentences[i + 1] = current + ' ' + next_sent
+                i += 1
+                continue
+        merged.append(current)
+        i += 1
+    return merged
+
+
+def detect_lecture_titles(texts):
+    """检测全大写的讲座标题"""
+    lectures = []
+    pattern = r'^(' + '|'.join(ORDINAL_MAP.keys()) + r')\s+VORTRAG'
+    
+    for i, text in enumerate(texts):
+        match = re.match(pattern, text.strip(), re.IGNORECASE)
+        if match:
+            ordinal_name = match.group(1).upper()
+            lectures.append({
+                "index": i,
+                "title": text.strip(),
+                "order": ORDINAL_MAP.get(ordinal_name, len(lectures) + 1),
+            })
+            continue
+        # VORTRAG I, VORTRAG 1 等
+        match = re.match(r'^VORTRAG\s+([IVXLC]+|\d+)$', text.strip())
+        if match:
+            lectures.append({
+                "index": i,
+                "title": text.strip(),
+                "order": len(lectures) + 1,
+            })
+    return lectures
+
+
+def detect_chapter_headings(texts):
+    """
+    检测章节标题（用于无讲座的书籍）
+    模式:
+      - "I. Title" / "II. Title" (罗马数字)
+      - "I. Teil: Title" (部分标题)
+      - "Erstes Kapitel" / "Kapitel 1"
+      - "Vorrede" / "Einleitung" / "Anhang"
+    """
+    SKIP_PREFIXES = {
+        'Rudolf Steiner Online', 'Seitennummern', 'Anmerkungen, angegeben',
+        'RUDOLF STEINER', 'Herausgegeben', 'Auflage', 'Gesamtausgabe',
+        'Bibliographie', 'ISBN', 'Copyright', 'Druck', 'Quellennachweis',
+        'Alle Rechte', 'Printed in', 'Verlag',
+    }
+    
+    chapters = []
+    for i, text in enumerate(texts):
+        t = text.strip()
+        if len(t) < 3 or len(t) > 120:
+            continue
+        # 跳过元信息
+        if any(t.startswith(p) for p in SKIP_PREFIXES):
+            continue
+        
+        is_heading = False
+        title = t
+        
+        # 模式1: 罗马数字 + 句点 + 标题  "I. Das bewusste Handeln"
+        m = re.match(r'^([IVXLC]+)\.\s+(.+)', t)
+        if m and len(m.group(2)) > 2:
+            is_heading = True
+            title = t
+        
+        # 模式2: "Erstes Kapitel", "Zweites Kapitel" 等
+        elif re.match(r'^(Erstes|Zweites|Drittes|Viertes|Fünftes|Sechstes|Siebentes|Achtes|Neuntes|Zehntes|Elftes|Zwölftes)\s+Kapitel', t):
+            is_heading = True
+        
+        # 模式3: "Kapitel 1", "Kapitel 2" 等
+        elif re.match(r'^Kapitel\s+\d+', t):
+            is_heading = True
+        
+        # 模式4: 特殊段标题 "Vorrede", "Einleitung", "Anhang", "Schlußwort"
+        elif t in ('Vorrede', 'Einleitung', 'Anhang', 'Schlußwort', 'Schlusswort',
+                    'Vorbemerkung', 'Vorwort', 'Nachwort', 'Prolog', 'Epilog',
+                    'INHALT', 'Inhalt'):
+            is_heading = True
+        
+        # 模式5: "Vorrede zur ..." / "Einleitung zu ..." 等
+        elif re.match(r'^(Vorrede|Einleitung|Anhang|Vorwort|Vorbemerkung)\s+(zur|zum|zu|in|für|über|auf)', t, re.IGNORECASE):
+            is_heading = True
+        
+        # 模式6: "Erster Anhang", "Zweiter Anhang" 等
+        elif re.match(r'^(Erster|Zweiter|Dritter|Vierter|Fünfter)\s+Anhang', t):
+            is_heading = True
+        
+        # 模式7: 全大写且较短（但排除纯大写长文本如 "RUDOLF STEINER GESAMTAUSGABE"）
+        elif t.isupper() and 3 < len(t) < 60 and len(t.split()) <= 6:
+            # 排除常见大写元信息
+            if not any(w in t for w in ['GESAMTAUSGABE', 'VERLAG', 'ARCHIV', 'STEUER']):
+                is_heading = True
+        
+        if is_heading:
+            chapters.append({
+                "index": i,
+                "title": title,
+                "order": len(chapters) + 1,
+            })
+    
+    return chapters
+
+
+def extract_book_title(all_texts, ga_number):
+    """从文档中提取书名"""
+    # 跳过这些常见的非标题前缀
+    SKIP = {
+        'Rudolf Steiner Online', 'Seitennummern', 'Anmerkungen, angegeben',
+        'RUDOLF STEINER GESAMTAUSGABE', 'Herausgegeben', 'Auflage',
+        'Bibliographie', 'ISBN', 'Copyright', 'Druck',
+        'Alle Rechte', 'Printed in', 'Quellennachweis',
+        'INHALT', 'Inhalt',
+    }
+    
+    for t in all_texts[:30]:
+        t = t.strip()
+        if len(t) < 5 or len(t) > 200:
+            continue
+        if any(t.startswith(p) for p in SKIP):
+            continue
+        if t.startswith('http://') or t.startswith('https://'):
+            continue
+        # 跳过纯数字、纯日期
+        if re.match(r'^[\d.\s]+$', t):
+            continue
+        # 跳过 "Rudolf Steiner" 单独一行
+        if t == 'Rudolf Steiner':
+            continue
+        # 跳过 GA 编号行
+        if re.match(r'^GA\s*\d+$', t):
+            continue
+        # 这可能是书名
+        if len(t) > 10:
+            return t
+    
+    return f"GA{ga_number}"
+
+
+def extract_images_from_docx(docx_path, output_dir):
+    os.makedirs(output_dir, exist_ok=True)
+    images = []
+    with zipfile.ZipFile(docx_path, 'r') as z:
+        media_files = sorted([f for f in z.namelist() if f.startswith('word/media/')])
+        for media_file in media_files:
+            ext = os.path.splitext(media_file)[1]
+            content = z.read(media_file)
+            file_hash = hashlib.md5(content).hexdigest()[:12]
+            filename = f"img_{file_hash}{ext}"
+            filepath = os.path.join(output_dir, filename)
+            with open(filepath, 'wb') as f:
+                f.write(content)
+            images.append(filename)
+    return images
+
+
+def get_image_paragraph_mapping(docx_path):
+    from docx import Document
+    doc = Document(docx_path)
+    image_rels = {}
+    for rel_id, rel in doc.part.rels.items():
+        if "image" in rel.reltype:
+            image_rels[rel_id] = os.path.basename(rel.target_ref)
+    paragraph_images = {}
+    for para_idx, para in enumerate(doc.paragraphs):
+        para_xml = para._element.xml
+        for rel_id, img_name in image_rels.items():
+            if rel_id in para_xml:
+                if para_idx not in paragraph_images:
+                    paragraph_images[para_idx] = []
+                paragraph_images[para_idx].append(img_name)
+    result = []
+    for para_idx, filenames in sorted(paragraph_images.items()):
+        for fn in filenames:
+            result.append((para_idx, fn))
+    return result
+
+
+def parse_book(docx_path, ga_number):
+    doc = Document(docx_path)
+    all_texts = [p.text.strip() for p in doc.paragraphs]
+    
+    # 提取书名
+    book_title = extract_book_title(all_texts, ga_number)
+    
+    # 先尝试检测讲座标题
+    lecture_infos = detect_lecture_titles(all_texts)
+    
+    # 如果没有讲座，尝试检测章节标题
+    if not lecture_infos:
+        lecture_infos = detect_chapter_headings(all_texts)
+    
+    image_mapping = get_image_paragraph_mapping(docx_path)
+    
+    if not lecture_infos:
+        # 仍然没有检测到任何标题 → 整本书作为一个"章节"，跳过前20段元信息
+        start_idx = 0
+        for i, t in enumerate(all_texts[:20]):
+            if re.match(r'^(Rudolf Steiner|GA\s*\d|Vorrede|Einleitung|VORTRAG|Erster)', t, re.IGNORECASE):
+                start_idx = i
+                break
+        # 跳过目录（INHALT 段之后）
+        for i, t in enumerate(all_texts[:50]):
+            if t.strip() in ('INHALT', 'Inhalt'):
+                # 找到目录结束（第一个长段落）
+                for j in range(i+1, min(i+50, len(all_texts))):
+                    if len(all_texts[j].strip()) > 100:
+                        start_idx = j
+                        break
+                break
+        
+        lectures = [{"title": book_title, "order": 1, "date": "", "location": "", "paragraphs": []}]
+        para_order = 1
+        for global_idx in range(start_idx, len(all_texts)):
+            text = all_texts[global_idx] if global_idx < len(all_texts) else ""
+            if text.strip():
+                try:
+                    sentences = split_sentences(text)
+                except Exception:
+                    sentences = [text]
+                if sentences:
+                    lectures[0]["paragraphs"].append({
+                        "global_index": global_idx, "order_index": para_order, "sentences": sentences,
+                    })
+                    para_order += 1
+    else:
+        lectures = []
+        for li, lec_info in enumerate(lecture_infos):
+            start_idx = lec_info["index"] + 1
+            end_idx = lecture_infos[li + 1]["index"] if li + 1 < len(lecture_infos) else len(all_texts)
+            start_idx = min(start_idx, len(all_texts))
+            end_idx = min(end_idx, len(all_texts))
+            
+            # 提取日期和地点
+            date = location = ""
+            if start_idx < len(all_texts):
+                next_line = all_texts[start_idx]
+                dm = re.search(r'(\d{1,2}\.\s*\w+\s*\d{4})', next_line)
+                if dm: date = dm.group(1)
+                lm = re.match(r'^([A-ZÄÖÜa-zäöüß]+(?:\s*[-/]\s*[A-ZÄÖÜa-zäöüß]+)*)\s*,', next_line)
+                if lm: location = lm.group(1)
+                if not location:
+                    lm2 = re.match(r'^(Dornach|Berlin|München|Basel|Köln|Hamburg|Wien|Stuttgart|Nürnberg|Leipzig|Prag|Paris|London|Zürich|Bern|Breslau|Kassel|Frankfurt|Straßburg)\s*$', next_line)
+                    if lm2: location = lm2.group(1)
+            
+            paragraphs = []
+            para_order = 1
+            for global_idx in range(start_idx, end_idx):
+                text = all_texts[global_idx] if global_idx < len(all_texts) else ""
+                if text.strip():
+                    try:
+                        sentences = split_sentences(text)
+                    except Exception:
+                        sentences = [text]
+                    if sentences:
+                        paragraphs.append({"global_index": global_idx, "order_index": para_order, "sentences": sentences})
+                        para_order += 1
+            lectures.append({"title": lec_info["title"], "order": lec_info["order"], "date": date, "location": location, "paragraphs": paragraphs})
+    
+    # 图片映射
+    images_result = []
+    if lecture_infos:
+        lecture_ranges = []
+        for lec in lectures:
+            if lec["paragraphs"]:
+                lecture_ranges.append((lec["order"], lec["paragraphs"][0]["global_index"], lec["paragraphs"][-1]["global_index"]))
+        for global_para_idx, filename in image_mapping:
+            for lec_order, first, last in lecture_ranges:
+                if first <= global_para_idx <= last:
+                    images_result.append({"filename": filename, "paragraph_index": global_para_idx, "local_paragraph_index": global_para_idx - first + 1, "lecture_order": lec_order})
+                    break
+    else:
+        for global_para_idx, filename in image_mapping:
+            images_result.append({"filename": filename, "paragraph_index": global_para_idx, "local_paragraph_index": global_para_idx + 1, "lecture_order": 1})
+    
+    total_paragraphs = sum(len(l["paragraphs"]) for l in lectures)
+    total_sentences = sum(len(s) for l in lectures for p in l["paragraphs"] for s in [p["sentences"]])
+    
+    return {
+        "ga_number": ga_number, "title": book_title, "lectures": lectures,
+        "images": images_result,
+        "stats": {"total_paragraphs": total_paragraphs, "total_sentences": total_sentences, "total_images": len(images_result)},
+    }
+
+
+def import_to_database(book_data):
+    import psycopg2
+    conn = psycopg2.connect(**DB_CONFIG)
+    cur = conn.cursor()
+    ga = book_data["ga_number"]
+    
+    cur.execute("SELECT id FROM books WHERE ga_number = %s", (str(ga),))
+    existing = cur.fetchone()
+    if existing:
+        conn.close()
+        return None  # 跳过
+    
+    cur.execute("INSERT INTO books (ga_number, title_de, pdf_filename) VALUES (%s, %s, %s) RETURNING id",
+                (str(ga), book_data["title"], f"GA{ga:03d}.docx"))
+    book_id = cur.fetchone()[0]
+    
+    for lecture in book_data["lectures"]:
+        cur.execute("""INSERT INTO lectures (book_id, order_index, title_de, lecture_date, location)
+                       VALUES (%s, %s, %s, %s, %s) RETURNING id""",
+                    (book_id, lecture["order"], lecture["title"], 
+                     parse_german_date(lecture.get("date","")) or None, 
+                     lecture.get("location","") or None))
+        lecture_id = cur.fetchone()[0]
+        lecture["_db_id"] = lecture_id
+        
+        for para in lecture["paragraphs"]:
+            cur.execute("INSERT INTO paragraphs (lecture_id, order_index) VALUES (%s, %s) RETURNING id",
+                        (lecture_id, para["order_index"]))
+            para_id = cur.fetchone()[0]
+            for si, sent_text in enumerate(para["sentences"], 1):
+                cur.execute("INSERT INTO sentences (paragraph_id, order_index, text_de) VALUES (%s, %s, %s)",
+                            (para_id, si, sent_text))
+    
+    for img in book_data["images"]:
+        lec_db_id = None
+        for lec in book_data["lectures"]:
+            if lec["order"] == img["lecture_order"]:
+                lec_db_id = lec.get("_db_id")
+                break
+        cur.execute("""INSERT INTO book_images (book_id, filename, filepath, paragraph_index, lecture_id, local_paragraph_index)
+                       VALUES (%s, %s, %s, %s, %s, %s)""",
+                    (book_id, img["filename"], f"GA{ga:03d}/{img['filename']}", img["paragraph_index"], lec_db_id, img["local_paragraph_index"]))
+    
+    conn.commit()
+    conn.close()
+    return book_id
+
+
+def process_single_book(docx_path, ga_number):
+    ga_str = f"GA{ga_number:03d}"
+    try:
+        book_data = parse_book(docx_path, ga_number)
+    except Exception as e:
+        return f"FAIL {ga_str}: 解析错误 - {e}"
+    
+    stats = book_data["stats"]
+    
+    # 提取图片
+    if stats["total_images"] > 0:
+        image_dir = os.path.join(IMAGE_BASE, ga_str)
+        extract_images_from_docx(docx_path, image_dir)
+    
+    # 导入数据库
+    try:
+        book_id = import_to_database(book_data)
+        if book_id is None:
+            return f"SKIP {ga_str}: 已存在"
+        return f"OK {ga_str}: {len(book_data['lectures'])} lectures, {stats['total_paragraphs']} para, {stats['total_sentences']} sent, {stats['total_images']} img → Book#{book_id}"
+    except Exception as e:
+        return f"FAIL {ga_str}: 导入错误 - {e}"
+
+
+def main():
+    docx_files = sorted(glob.glob(os.path.join(DOCX_DIR, "*.docx")))
+    
+    books = []
+    for f in docx_files:
+        m = re.match(r'GA(\d+)\.docx', os.path.basename(f))
+        if m:
+            books.append((f, int(m.group(1))))
+    
+    print(f"找到 {len(books)} 本书待处理")
+    
+    success = fail = skip = 0
+    for i, (path, ga) in enumerate(books):
+        result = process_single_book(path, ga)
+        if result.startswith("OK"):
+            success += 1
+        elif result.startswith("SKIP"):
+            skip += 1
+        else:
+            fail += 1
+        
+        if (i + 1) % 5 == 0 or result.startswith("FAIL"):
+            print(f"[{i+1}/{len(books)}] {result}")
+    
+    print(f"\n完成: {success} 成功, {fail} 失败, {skip} 跳过")
+
+
+if __name__ == "__main__":
+    main()

@@ -11,6 +11,7 @@ in-memory sets, so translation state survives server restarts.
 
 import asyncio
 import logging
+import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy import select, func
@@ -18,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db.database import async_session as AsyncSessionLocal, get_db
-from app.db.models import Lecture, Paragraph, Sentence
+from app.db.models import Contribution, Lecture, Paragraph, Sentence
 from app.routers.auth import AuthUser, require_user, get_current_user
 from app.services.auth_client import (
     reserve_credits,
@@ -80,20 +81,42 @@ async def translate_lecture(
     remaining = total - translated
     if remaining == 0:
         if lecture and not lecture.is_published:
+            existing = await db.execute(
+                select(Contribution).where(
+                    Contribution.user_id == user.id,
+                    Contribution.lecture_id == lecture_id,
+                    Contribution.contribution_type == "translate",
+                )
+            )
+            if existing.scalar_one_or_none():
+                lecture.is_published = True
+                await set_publication_status(db, lecture_id, book_id, "published", user.id)
+                await db.commit()
+                return {
+                    "lecture_id": lecture_id,
+                    "status": "already_translated",
+                    "message": "All sentences already translated",
+                    "translated": translated,
+                    "total": total,
+                }
+
             balance = await get_credits_balance(user.raw_token)
-            available = float(balance.get("credits", 0)) - float(balance.get("credits_reserved", 0)) if balance else user.credits
+            available = float(balance.get("credits", 0)) - float(balance.get("credits_reserved", 0)) if balance and "error" not in balance else user.credits
             if available < COST_PER_LECTURE:
                 raise HTTPException(
                     status_code=402,
                     detail=f"点数不足：翻译需要 {COST_PER_LECTURE} 点，当前可用 {available:.0f} 点"
                 )
+            ref_id = f"translate-lecture-{lecture_id}-{uuid.uuid4().hex[:8]}"
             deduct_result = await atomic_deduct_credits(
                 user.raw_token, COST_PER_LECTURE,
-                reference_id=f"translate-lecture-{lecture_id}",
+                reference_id=ref_id,
                 description=f"翻译讲座 {lecture_id}",
             )
             if "error" in deduct_result:
-                raise HTTPException(status_code=402, detail=f"积分扣费失败")
+                error_detail = deduct_result.get("error", "未知错误")
+                logger.error(f"Lecture {lecture_id}: deduct credits failed: {deduct_result}")
+                raise HTTPException(status_code=402, detail=f"积分扣费失败: {error_detail}")
             lecture.is_published = True
             await set_publication_status(db, lecture_id, book_id, "published", user.id)
             await add_contribution(
@@ -114,17 +137,18 @@ async def translate_lecture(
         }
 
     balance = await get_credits_balance(user.raw_token)
-    available = float(balance.get("credits", 0)) - float(balance.get("credits_reserved", 0)) if balance else user.credits
+    available = float(balance.get("credits", 0)) - float(balance.get("credits_reserved", 0)) if balance and "error" not in balance else user.credits
     if available < COST_PER_LECTURE:
         raise HTTPException(
             status_code=402,
             detail=f"点数不足：翻译需要 {COST_PER_LECTURE} 点，当前可用 {available:.0f} 点"
         )
 
+    ref_id = f"translate-lecture-{lecture_id}-{uuid.uuid4().hex[:8]}"
     reserve_result = await reserve_credits(
         user.raw_token,
         amount=COST_PER_LECTURE,
-        reference_id=f"translate-lecture-{lecture_id}",
+        reference_id=ref_id,
         description=f"翻译讲座 {lecture_id}",
     )
     if not reserve_result or "error" in reserve_result:
@@ -135,7 +159,7 @@ async def translate_lecture(
     await set_publication_status(db, lecture_id, book_id, "translating", user.id)
     await db.commit()
 
-    asyncio.create_task(_do_translate_lecture(lecture_id, book_id, user.raw_token, user.id, user.display_name))
+    asyncio.create_task(_do_translate_lecture(lecture_id, book_id, user.raw_token, user.id, user.display_name, ref_id))
 
     balance = await get_credits_balance(user.raw_token)
     new_credits = balance.get("credits", user.credits) if balance else user.credits
@@ -178,7 +202,7 @@ async def get_translation_cost(
     can_afford = None
     if user:
         balance = await get_credits_balance(user.raw_token)
-        if balance:
+        if balance and "error" not in balance:
             user_credits = float(balance.get("credits", 0)) - float(balance.get("credits_reserved", 0))
             can_afford = user_credits >= COST_PER_LECTURE
 
@@ -231,7 +255,7 @@ async def lecture_translation_status(
     )
 
 
-async def _do_translate_lecture(lecture_id: int, book_id: int, token: str, user_id: str, display_name: str):
+async def _do_translate_lecture(lecture_id: int, book_id: int, token: str, user_id: str, display_name: str, reference_id: str):
     success = False
 
     try:
@@ -330,7 +354,7 @@ async def _do_translate_lecture(lecture_id: int, book_id: int, token: str, user_
                     token,
                     reserved_amount=COST_PER_LECTURE,
                     actual_amount=COST_PER_LECTURE,
-                    reference_id=f"translate-lecture-{lecture_id}",
+                    reference_id=reference_id,
                     description=f"翻译讲座 {lecture_id} 完成",
                 )
                 if not settle_result or "error" in settle_result:
@@ -339,7 +363,7 @@ async def _do_translate_lecture(lecture_id: int, book_id: int, token: str, user_
                 refund_result = await refund_credits(
                     token,
                     amount=COST_PER_LECTURE,
-                    reference_id=f"translate-lecture-{lecture_id}",
+                    reference_id=reference_id,
                     description=f"翻译讲座 {lecture_id} 失败，退还积分",
                 )
                 if not refund_result or "error" in refund_result:

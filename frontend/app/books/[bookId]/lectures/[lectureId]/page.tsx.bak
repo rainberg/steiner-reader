@@ -1,0 +1,503 @@
+'use client';
+
+import { useEffect, useState, useRef } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
+import {
+  fetchParagraphs, fetchSentences, fetchBook,
+  getTranslationCost, getTranslationStatus, translateLecture,
+  Book, Paragraph, Sentence,
+} from '@/lib/api';
+
+type ViewMode = 'bilingual' | 'german' | 'chinese';
+
+/** A sentence pair: german text + optional chinese translation */
+interface SentencePair {
+  de: string;
+  zh: string | null;
+}
+
+export default function LecturePage() {
+  const params = useParams();
+  const router = useRouter();
+  const lectureId = Number(params.lectureId);
+  const bookId = Number(params.bookId);
+
+  const [book, setBook] = useState<Book | null>(null);
+  const [lecture, setLecture] = useState<{
+    id: number; book_id: number; order_index: number;
+    title_de: string; title_zh?: string;
+    lecture_date?: string; location?: string;
+  } | null>(null);
+  const [paragraphs, setParagraphs] = useState<Paragraph[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [sentenceMap, setSentenceMap] = useState<Record<number, SentencePair[]>>({});
+  const [scrollProgress, setScrollProgress] = useState(0);
+  const [viewMode, setViewMode] = useState<ViewMode>('bilingual');
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  // ── Translation state ──
+  const [translationState, setTranslationState] = useState<
+    'idle' | 'cost_checked' | 'translating' | 'done' | 'error'
+  >('idle');
+  const [translationCost, setTranslationCost] = useState<{
+    cost: number; remaining: number; user_credits: number; already_translated: boolean;
+  } | null>(null);
+  const [translationProgress, setTranslationProgress] = useState<string>('');
+  const [translationError, setTranslationError] = useState<string>('');
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Check translation status on mount
+  useEffect(() => {
+    getTranslationCost(lectureId)
+      .then(cost => {
+        setTranslationCost({
+          cost: cost.cost,
+          remaining: cost.remaining,
+          user_credits: cost.user_credits ?? 0,
+          already_translated: cost.already_translated,
+        });
+        setTranslationState(cost.already_translated ? 'done' : 'cost_checked');
+      })
+      .catch(() => {
+        setTranslationCost(null);
+        setTranslationState('idle');
+      });
+  }, [lectureId]);
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current);
+    };
+  }, []);
+
+  // Start polling after translation starts
+  const startPolling = () => {
+    if (pollingRef.current) clearInterval(pollingRef.current);
+    pollingRef.current = setInterval(async () => {
+      try {
+        const status = await getTranslationStatus(lectureId);
+        setTranslationProgress(`${status.translated}/${status.total}`);
+        if (status.completed) {
+          if (pollingRef.current) clearInterval(pollingRef.current);
+          pollingRef.current = null;
+          setTranslationState('done');
+          // Reload data
+          await reloadData();
+        }
+      } catch {
+        // keep polling
+      }
+    }, 3000);
+  };
+
+  // Start translation
+  const handleTranslate = async () => {
+    setTranslationError('');
+    setTranslationState('translating');
+    setTranslationProgress('0/...');
+    try {
+      const result = await translateLecture(lectureId);
+      setTranslationProgress(`${result.translated}/${result.total}`);
+      startPolling();
+    } catch (err: unknown) {
+      setTranslationState('error');
+      setTranslationError(err instanceof Error ? err.message : '翻译请求失败');
+      // Re-check cost after error (credits might have changed)
+      getTranslationCost(lectureId).then(c => {
+        setTranslationCost({
+          cost: c.cost, remaining: c.remaining,
+          user_credits: c.user_credits ?? 0,
+          already_translated: c.already_translated,
+        });
+        setTranslationState(c.already_translated ? 'done' : 'cost_checked');
+      }).catch(() => {});
+    }
+  };
+
+  // Reload paragraphs and sentences
+  const reloadData = async () => {
+    try {
+      const paras = await fetchParagraphs(lectureId);
+      setParagraphs(paras);
+      if (paras.length > 0) {
+        const results = await Promise.all(
+          paras.map(p =>
+            fetchSentences(p.id).then((sents: Sentence[]) => ({
+              paraId: p.id,
+              pairs: sents.map(s => ({
+                de: s.content_de || '',
+                zh: s.content_zh || null,
+              })),
+            }))
+          )
+        );
+        const map: Record<number, SentencePair[]> = {};
+        for (const r of results) map[r.paraId] = r.pairs;
+        setSentenceMap(map);
+      }
+    } catch {
+      // ignore reload errors
+    }
+  };
+
+  // ── End Translation state ──
+
+  // Load lecture data
+  useEffect(() => {
+    fetchBook(bookId).then(b => {
+      setBook(b);
+      const l = b.lectures.find(l => l.id === lectureId);
+      if (l) setLecture(l);
+      else router.push(`/books/${bookId}`);
+    }).catch(() => router.push(`/books/${bookId}`));
+  }, [bookId, lectureId, router]);
+
+  // Load paragraphs
+  useEffect(() => {
+    fetchParagraphs(lectureId)
+      .then(setParagraphs)
+      .catch(() => setParagraphs([]));
+  }, [lectureId]);
+
+  // Load all sentences — store both DE and ZH
+  useEffect(() => {
+    if (paragraphs.length === 0) { setLoading(false); return; }
+    Promise.all(paragraphs.map(p =>
+      fetchSentences(p.id).then((sents: Sentence[]) => {
+        const pairs: SentencePair[] = sents.map(s => ({
+          de: s.content_de || '',
+          zh: s.content_zh || null,
+        }));
+        return { paraId: p.id, pairs };
+      })
+    )).then(results => {
+      const map: Record<number, SentencePair[]> = {};
+      for (const r of results) map[r.paraId] = r.pairs;
+      setSentenceMap(map);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, [paragraphs]);
+
+  // Scroll progress
+  useEffect(() => {
+    const handleScroll = () => {
+      if (!contentRef.current) return;
+      const { scrollTop, scrollHeight, clientHeight } = document.documentElement;
+      const max = scrollHeight - clientHeight;
+      setScrollProgress(max > 0 ? Math.min(scrollTop / max, 1) : 0);
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Navigate to prev/next
+  const sortedLectures = book
+    ? [...book.lectures].sort((a, b) => a.order_index - b.order_index)
+    : [];
+  const currentIdx = sortedLectures.findIndex(l => l.id === lectureId);
+  const prev = currentIdx > 0 ? sortedLectures[currentIdx - 1] : null;
+  const next = currentIdx < sortedLectures.length - 1 ? sortedLectures[currentIdx + 1] : null;
+
+  if (loading) return <LoadingSkeleton />;
+  if (!lecture) return null;
+
+  const tabs: { key: ViewMode; label: string }[] = [
+    { key: 'bilingual', label: '对照' },
+    { key: 'german', label: '德语' },
+    { key: 'chinese', label: '中文' },
+  ];
+
+  return (
+    <div className="page-container py-6 pb-24">
+      {/* Progress bar */}
+      <div className="fixed top-14 left-0 right-0 h-0.5 z-30 bg-gray-100">
+        <div
+          className="h-full bg-gradient-to-r from-indigo-400 to-indigo-600 transition-all duration-300"
+          style={{ width: `${scrollProgress * 100}%` }}
+        />
+      </div>
+
+      {/* Back link */}
+      <Link
+        href={`/books/${bookId}`}
+        className="inline-flex items-center gap-1 text-sm text-gray-400 hover:text-indigo-500 transition-colors mb-6"
+      >
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+        </svg>
+        {book?.title_de || '返回'}
+      </Link>
+
+      {/* Lecture header */}
+      <div className="mb-6 max-w-3xl">
+        <div className="flex items-center gap-3 text-xs text-gray-400 mb-3 flex-wrap">
+          {lecture.lecture_date && <span className="font-mono">{lecture.lecture_date}</span>}
+          {lecture.location && (
+            <span className="bg-gray-50 text-gray-500 px-1.5 py-0.5 rounded border border-gray-100">
+              {lecture.location}
+            </span>
+          )}
+        </div>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900 leading-snug">
+          {lecture.title_de}
+        </h1>
+        {lecture.title_zh && (
+          <p className="text-sm text-gray-500 mt-1">{lecture.title_zh}</p>
+        )}
+      </div>
+
+      {/* Translation action bar */}
+      <div className="max-w-3xl mb-6">
+        {translationState === 'done' && (
+          <div className="inline-flex items-center gap-1.5 text-xs text-green-600 bg-green-50 border border-green-100 rounded-full px-3 py-1">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            已翻译（点击右侧对照标签查看翻译）
+          </div>
+        )}
+
+        {translationState === 'translating' && (
+          <div className="inline-flex items-center gap-2 text-xs text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-full px-3 py-1">
+            <div className="w-3 h-3 border-2 border-indigo-200 border-t-indigo-500 rounded-full animate-spin" />
+            翻译中 {translationProgress}…
+          </div>
+        )}
+
+        {translationState === 'error' && (
+          <div className="flex items-center gap-3">
+            <div className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-full px-3 py-1">
+              {translationError}
+            </div>
+            <button
+              onClick={() => { setTranslationState('cost_checked'); setTranslationError(''); }}
+              className="text-xs text-gray-400 hover:text-gray-600 underline"
+            >
+              重试
+            </button>
+          </div>
+        )}
+
+        {translationState === 'cost_checked' && translationCost && !translationCost.already_translated && (
+          <button
+            onClick={handleTranslate}
+            disabled={translationCost.user_credits < translationCost.cost}
+            className={`inline-flex items-center gap-1.5 text-xs font-medium rounded-full px-3 py-1.5 transition-all ${
+              translationCost.user_credits < translationCost.cost
+                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 border border-indigo-200/50'
+            }`}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+            </svg>
+            翻译整章（{translationCost.cost} 点）
+            <span className="text-gray-400 font-normal">
+              · 余额 {translationCost.user_credits} 点
+              {translationCost.user_credits < translationCost.cost && ' · 点数不足'}
+            </span>
+          </button>
+        )}
+
+        {translationState === 'idle' && (
+          <button
+            onClick={() => {
+              getTranslationCost(lectureId).then(c => {
+                setTranslationCost({
+                  cost: c.cost, remaining: c.remaining,
+                  user_credits: c.user_credits ?? 0,
+                  already_translated: c.already_translated,
+                });
+                setTranslationState(c.already_translated ? 'done' : 'cost_checked');
+              }).catch(() => {});
+            }}
+            className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-indigo-500 rounded-full px-3 py-1.5 transition-all"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            检查翻译状态
+          </button>
+        )}
+      </div>
+
+      {/* View mode tabs */}
+      <div className="max-w-3xl mb-6 flex items-center gap-1 bg-gray-50 rounded-lg p-1 w-fit">
+        {tabs.map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => setViewMode(tab.key)}
+            className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all duration-200 ${
+              viewMode === tab.key
+                ? 'bg-white text-indigo-600 shadow-sm border border-gray-100'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Paragraphs */}
+      <div className="max-w-3xl" ref={contentRef}>
+        {paragraphs.map((para) => (
+          <ReaderParagraph
+            key={para.id}
+            paragraph={para}
+            sentencePairs={sentenceMap[para.id] || []}
+            viewMode={viewMode}
+          />
+        ))}
+      </div>
+
+      {/* Empty state */}
+      {paragraphs.length === 0 && (
+        <div className="text-center py-16 text-gray-400">
+          <p className="text-lg mb-1">暂无内容</p>
+          <p className="text-sm">该章节尚未导入段落数据</p>
+        </div>
+      )}
+
+      {/* Navigation footer */}
+      <div className="max-w-3xl mt-12 pt-8 border-t border-gray-100 flex items-center justify-between">
+        {prev ? (
+          <Link
+            href={`/books/${bookId}/lectures/${prev.id}`}
+            className="flex items-center gap-2 text-sm text-gray-400 hover:text-indigo-600 transition-colors group"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            <div className="text-left">
+              <div className="text-xs text-gray-300 group-hover:text-indigo-400">上一篇</div>
+              <div className="text-sm text-gray-500 line-clamp-1">{prev.title_de}</div>
+            </div>
+          </Link>
+        ) : <div />}
+        {next ? (
+          <Link
+            href={`/books/${bookId}/lectures/${next.id}`}
+            className="flex items-center gap-2 text-sm text-gray-400 hover:text-indigo-600 transition-colors group"
+          >
+            <div className="text-right">
+              <div className="text-xs text-gray-300 group-hover:text-indigo-400">下一篇</div>
+              <div className="text-sm text-gray-500 line-clamp-1">{next.title_de}</div>
+            </div>
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </Link>
+        ) : <div />}
+      </div>
+    </div>
+  );
+}
+
+function ReaderParagraph({
+  paragraph,
+  sentencePairs,
+  viewMode,
+}: {
+  paragraph: Paragraph;
+  sentencePairs: SentencePair[];
+  viewMode: ViewMode;
+}) {
+  // German-only mode
+  if (viewMode === 'german') {
+    return (
+      <div className="mb-5">
+        <div className="reader-german">
+          {sentencePairs.length > 0 ? (
+            <p className="leading-7 text-gray-900">
+              {sentencePairs.map((pair, i) => (
+                <span key={i} className="leading-7">{pair.de}</span>
+              ))}
+            </p>
+          ) : (
+            <p className="leading-7 text-gray-800">{paragraph.content_de}</p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Chinese-only mode
+  if (viewMode === 'chinese') {
+    const hasChinese = sentencePairs.some(s => s.zh);
+    return (
+      <div className="mb-5">
+        <div className="reader-chinese">
+          {hasChinese ? (
+            <p className="leading-7 text-gray-900">
+              {sentencePairs.map((pair, i) => (
+                <span key={i} className="leading-7">{pair.zh}</span>
+              ))}
+            </p>
+          ) : (
+            <p className="leading-7 text-gray-400 italic">
+              （暂无中文翻译）
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Bilingual mode (default) ──
+  // Show German + Chinese side by side (no paragraph-level translate button)
+  const hasChinese = sentencePairs.some(s => s.zh);
+
+  return (
+    <div className="mb-5 group">
+      {/* German */}
+      <div className="reader-german mb-1.5">
+        {sentencePairs.length > 0 ? (
+          <p className="leading-7">
+            {sentencePairs.map((pair, i) => (
+              <span key={i} className="cursor-default rounded-sm px-0.5 leading-7">
+                {pair.de}
+              </span>
+            ))}
+          </p>
+        ) : (
+          <p className="leading-7 text-gray-800">{paragraph.content_de}</p>
+        )}
+      </div>
+
+      {/* Chinese translation — shown automatically if available */}
+      {hasChinese ? (
+        <div className="mt-1.5 pl-2 pt-1.5 pr-2 pb-1.5 bg-indigo-50/40 border-l-2 border-indigo-200 rounded-sm">
+          <p className="reader-chinese leading-7 text-gray-700 text-sm">
+            {sentencePairs.map((pair, i) => (
+              <span key={i} className="leading-7">{pair.zh}</span>
+            ))}
+          </p>
+        </div>
+      ) : (
+        <div className="mt-1.5 pl-2 pt-1.5 pr-2 pb-1.5 bg-gray-50 border-l-2 border-gray-200 rounded-sm">
+          <p className="text-xs text-gray-400 italic">
+            （暂无翻译）
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LoadingSkeleton() {
+  return (
+    <div className="page-container py-8">
+      <div className="shimmer h-4 w-16 rounded mb-6" />
+      <div className="shimmer h-8 w-72 rounded mb-2" />
+      <div className="shimmer h-4 w-48 rounded mb-8" />
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div key={i} className="mb-5">
+          <div className="shimmer h-20 w-full rounded-lg" />
+          <div className="shimmer h-4 w-16 rounded mt-2" />
+        </div>
+      ))}
+    </div>
+  );
+}

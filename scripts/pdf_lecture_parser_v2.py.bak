@@ -1,0 +1,305 @@
+#!/usr/bin/env python3
+"""
+PDF 演讲解析器 v2：用 docx TOC 页码 + PDF 文本搜索精确定位每场演讲。
+"""
+import os, re, sys, json
+import fitz  # PyMuPDF
+from docx import Document
+
+DOCX_DIR = "/opt/steiner-reader/books/docx"
+UPLOADS_DIR = "/opt/steiner-reader/uploads"
+
+def parse_toc_with_pages(docx_path):
+    """从 docx TOC 中提取演讲标题和页码"""
+    doc = Document(docx_path)
+    paras = doc.paragraphs
+
+    inhalt = None
+    for i, p in enumerate(paras):
+        text = p.text.strip().upper()
+        if 'INHALT' in text:
+            inhalt = i
+            break
+    if inhalt is None:
+        return None
+
+    lectures = []
+    skip_kw = ['inhalt', 'vorrede', 'nachwort', 'anhang', 'register', 'hinweis',
+               'veröffentlichungen', 'bibliographie', 'isbn', 'zusammenfassung',
+               'ausführliche', 'zu dieser ausgabe', 'bericht']
+
+    for i in range(inhalt + 1, len(paras)):
+        text = paras[i].text.strip()
+        if not text:
+            continue
+        clean = re.sub(r'^\.\s*', '', text)
+
+        if '\t' in clean:
+            parts = clean.rsplit('\t', 1)
+            title = parts[0].strip()
+            page_str = parts[1].strip()
+
+            if re.match(r'^\d{1,4}$', page_str):
+                page_num = int(page_str)
+                if any(kw in title.lower() for kw in skip_kw):
+                    continue
+
+                subtitle = ""
+                if i + 1 < len(paras):
+                    nt = paras[i + 1].text.strip()
+                    nt_clean = re.sub(r'^\.\s*', '', nt)
+                    if (nt_clean and '\t' not in nt_clean and
+                        not re.match(r'^\d+$', nt_clean) and
+                        len(nt_clean) < 150):
+                        subtitle = nt_clean
+
+                full_title = title
+                if subtitle:
+                    full_title = f"{title} - {subtitle}"
+
+                lectures.append({
+                    "title": full_title[:200],
+                    "page": page_num,
+                })
+
+    return lectures
+
+def find_pdf_offset(pdf_doc, lectures):
+    """通过搜索演讲标题在 PDF 中的位置，计算页码偏移量"""
+    if not lectures:
+        return 0
+
+    # 取前几个演讲标题的关键字搜索
+    for lec in lectures[:5]:
+        title = lec["title"]
+        toc_page = lec["page"]
+
+        # 提取搜索关键字（日期部分）
+        date_match = re.search(r'(\d{1,2})\.\s*(\w+)\s*(\d{4})', title)
+        if not date_match:
+            continue
+
+        search_text = date_match.group(0)  # 如 "24. Juni 1924"
+
+        # 在 PDF 前 100 页搜索
+        for pdf_idx in range(min(100, pdf_doc.page_count)):
+            text = pdf_doc[pdf_idx].get_text()
+            if search_text in text:
+                # 找到了！计算偏移
+                # toc_page 是印刷页码，pdf_idx 是 0-indexed PDF 页
+                # offset 使得: pdf_idx = (toc_page - 1) - offset
+                # 所以 offset = (toc_page - 1) - pdf_idx
+                offset = (toc_page - 1) - pdf_idx
+
+                # 验证：在同一页面也找演讲标题关键字
+                ordinal_match = re.search(r'(erster|ERSTER|Erster)\s+[Vv]ortrag', title, re.IGNORECASE)
+                if ordinal_match:
+                    if ordinal_match.group(0) in text or ordinal_match.group(0).upper() in text.upper():
+                        return offset
+
+                # 即使标题不完全匹配，日期匹配也足够
+                return offset
+
+    return 0  # 无法检测偏移
+
+def extract_text_from_pdf(pdf_doc, start_page, end_page, offset):
+    """从 PDF 提取指定印刷页范围的文本"""
+    # 印刷页 → PDF 页（0-indexed）
+    pdf_start = max(0, (start_page - 1) - offset)
+    pdf_end = min(pdf_doc.page_count, (end_page) - offset)
+
+    paragraphs = []
+    for pdf_idx in range(pdf_start, pdf_end):
+        page = pdf_doc[pdf_idx]
+        text = page.get_text()
+        for para in text.split('\n'):
+            para = para.strip()
+            if para and len(para) > 2:
+                paragraphs.append(para)
+
+    return paragraphs
+
+def split_into_sentences(text):
+    """
+    Improved sentence splitting for German text.
+    Handles dates and common abbreviations.
+    """
+    if not text or not text.strip():
+        return []
+    
+    text = text.strip()
+    
+    # Common German abbreviations that end with period but don't end sentences
+    abbreviations = [
+        'z.B.', 'd.h.', 'u.a.', 'v.a.', 'usw.', 'etc.',
+        'ca.', 'Nr.', 'Dr.', 'Prof.', 'bspw.', 'evtl.',
+        'ggf.', 'inkl.', 'exkl.', 'sog.', 'bzw.', 'insb.',
+        'min.', 'max.', 'S.', 's.', 'f.', 'ff.'
+    ]
+    
+    # Add space after abbreviations to prevent splitting
+    for abbr in abbreviations:
+        # Case insensitive replacement
+        pattern = re.compile(re.escape(abbr), re.IGNORECASE)
+        replacement = abbr.replace('.', '###ABBR###')
+        text = pattern.sub(replacement, text)
+    
+    # Handle dates: \d{1,2}. followed by capital letter (month)
+    # German month names
+    months = [
+        'Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
+        'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'
+    ]
+    month_pattern = '|'.join(months)
+    
+    # Replace "18. August" -> "18###DATE### August"
+    text = re.sub(r'(\b\d{1,2})\.\s+(' + month_pattern + r'\b)', r'\1###DATE### \2', text, flags=re.IGNORECASE)
+    
+    # Handle standalone dates: "Am 18." -> "Am 18###DATE###"
+    text = re.sub(r'(\b\d{1,2})\.(?=\s|$)', r'\1###DATE###', text)
+    
+    # Split sentences
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    
+    # Restore abbreviations and dates
+    sentences = [s.replace('###ABBR###', '.').replace('###DATE###', '.') for s in sentences]
+    
+    # Filter
+    sentences = [s.strip() for s in sentences if len(s.strip()) > 2]
+    
+    return sentences
+
+def find_pdf_file(ga_number):
+    """找到 PDF 文件"""
+    # 直接匹配
+    path = os.path.join(UPLOADS_DIR, f"{ga_number}.pdf")
+    if os.path.exists(path):
+        return path
+
+    # 模糊匹配
+    for f in os.listdir(UPLOADS_DIR):
+        if ga_number.lower() in f.lower() and f.endswith('.pdf'):
+            return os.path.join(UPLOADS_DIR, f)
+
+    return None
+
+def parse_lectures_pdf(ga_number):
+    """用 PDF 解析演讲集"""
+    docx_path = os.path.join(DOCX_DIR, f"{ga_number}.docx")
+    pdf_path = find_pdf_file(ga_number)
+
+    if not os.path.exists(docx_path):
+        return None, f"找不到 docx"
+    if not pdf_path:
+        return None, f"找不到 PDF"
+
+    # 从 docx 提取 TOC
+    lectures = parse_toc_with_pages(docx_path)
+    if not lectures:
+        return None, "TOC 中未找到演讲条目"
+
+    # 打开 PDF
+    pdf_doc = fitz.open(pdf_path)
+
+    # 检测页码偏移
+    offset = find_pdf_offset(pdf_doc, lectures)
+
+    # 从 PDF 提取每场演讲的内容
+    for idx, lec in enumerate(lectures):
+        start_page = lec["page"]
+
+        if idx + 1 < len(lectures):
+            end_page = lectures[idx + 1]["page"] - 1
+        else:
+            end_page = start_page + 30
+
+        if end_page < start_page:
+            end_page = start_page
+
+        paragraphs = extract_text_from_pdf(pdf_doc, start_page, end_page, offset)
+        lec["paragraphs"] = paragraphs
+
+    pdf_doc.close()
+    return lectures, "OK"
+
+
+if __name__ == "__main__":
+    import psycopg2
+
+    DB_CONFIG = {
+        "host": "localhost", "database": "steiner_reader",
+        "user": "steiner", "password": os.getenv("DB_PASSWORD", "change_me")
+    }
+
+    if len(sys.argv) < 2:
+        print("用法: python3 pdf_lecture_parser_v2.py GA279 [test|import]")
+        sys.exit(1)
+
+    ga = sys.argv[1]
+    mode = sys.argv[2] if len(sys.argv) > 2 else "test"
+
+    if mode == "test":
+        lectures, status = parse_lectures_pdf(ga)
+        if lectures is None:
+            print(f"❌ {ga}: {status}")
+            sys.exit(1)
+
+        total_paras = sum(len(l["paragraphs"]) for l in lectures)
+        total_sents = sum(len(split_into_sentences(" ".join(l["paragraphs"]))) for l in lectures)
+        max_paras = max((len(l["paragraphs"]) for l in lectures), default=0)
+
+        print(f"\n📖 {ga}: {len(lectures)} 演讲, {total_paras} 段落, {total_sents} 句子")
+        print(f"{'='*60}")
+        for l in lectures[:15]:
+            pcount = len(l["paragraphs"])
+            print(f"  p.{l['page']:3d} | {l['title'][:60]:60s} | {pcount:4d} 段")
+        if len(lectures) > 15:
+            print(f"  ... 还有 {len(lectures)-15} 场")
+
+    elif mode == "import":
+        lectures, status = parse_lectures_pdf(ga)
+        if lectures is None:
+            print(f"❌ {ga}: {status}")
+            sys.exit(1)
+
+        conn = psycopg2.connect(**DB_CONFIG)
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM books WHERE ga_number = %s", (ga,))
+        row = cur.fetchone()
+        if not row:
+            print(f"❌ {ga}: 数据库中无此书")
+            sys.exit(1)
+        book_id = row[0]
+
+        cur.execute("DELETE FROM sentences WHERE paragraph_id IN (SELECT id FROM paragraphs WHERE lecture_id IN (SELECT id FROM lectures WHERE book_id = %s))", (book_id,))
+        cur.execute("DELETE FROM paragraphs WHERE lecture_id IN (SELECT id FROM lectures WHERE book_id = %s)", (book_id,))
+        cur.execute("DELETE FROM lectures WHERE book_id = %s", (book_id,))
+
+        total_sents = 0
+        for order, lec in enumerate(lectures):
+            cur.execute(
+                "INSERT INTO lectures (book_id, title_de, order_index, level) VALUES (%s, %s, %s, 'lecture') RETURNING id",
+                (book_id, lec["title"], order)
+            )
+            lecture_id = cur.fetchone()[0]
+
+            para_order = 0
+            for para_text in lec.get("paragraphs", []):
+                cur.execute(
+                    "INSERT INTO paragraphs (lecture_id, order_index) VALUES (%s, %s) RETURNING id",
+                    (lecture_id, para_order)
+                )
+                para_id = cur.fetchone()[0]
+
+                for sent_order, sent_text in enumerate(split_into_sentences(para_text)):
+                    cur.execute(
+                        "INSERT INTO sentences (paragraph_id, order_index, text_de) VALUES (%s, %s, %s)",
+                        (para_id, sent_order, sent_text)
+                    )
+                    total_sents += 1
+
+                para_order += 1
+
+        conn.commit()
+        conn.close()
+        print(f"✅ {ga}: {len(lectures)} 演讲, {total_sents} 句子")
