@@ -123,5 +123,6 @@ async def get_me(user: AuthUser = Depends(require_user)):
         "phone": info.get("phone"),
         "role": info.get("role", user.role),
         "credits": float(info.get("credits", "0.00")),
+        "credits_reserved": float(info.get("credits_reserved", "0.00")),
         "is_active": info.get("is_active", user.is_active),
     }

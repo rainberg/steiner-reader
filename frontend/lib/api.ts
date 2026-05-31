@@ -86,6 +86,7 @@ export interface User {
   phone: string | null;
   role: string;
   credits: number;
+  credits_reserved?: number;
   username?: string;
   is_active: boolean;
   is_admin?: boolean;
@@ -383,6 +384,7 @@ export async function fetchMe(): Promise<User> {
     phone: data.phone,
     role: data.role,
     credits: data.credits,
+    credits_reserved: data.credits_reserved ?? 0,
     is_active: data.is_active,
     is_admin: data.role === 'admin',
     created_at: data.created_at,

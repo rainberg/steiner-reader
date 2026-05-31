@@ -20,9 +20,11 @@ export default function Header() {
     fetchMe()
       .then(nextUser => {
         setUser(nextUser);
-        const c = typeof nextUser.credits === 'number' ? nextUser.credits : parseFloat(String(nextUser.credits)) || 0;
-        setCredits(c);
-        updateStoredCredits(c);
+        const total = typeof nextUser.credits === 'number' ? nextUser.credits : parseFloat(String(nextUser.credits)) || 0;
+        const reserved = nextUser.credits_reserved ?? 0;
+        const available = total - reserved;
+        setCredits(available);
+        updateStoredCredits(available);
       })
       .catch(() => {
         clearAuth();
@@ -49,13 +51,19 @@ export default function Header() {
       const u = getStoredUser();
       if (u) {
         setUser(u);
-        setCredits(typeof u.credits === 'number' ? u.credits : parseFloat(String(u.credits)) || 0);
+        const total = typeof u.credits === 'number' ? u.credits : parseFloat(String(u.credits)) || 0;
+        const reserved = u.credits_reserved ?? 0;
+        setCredits(total - reserved);
       }
     };
     const handleAuthChange = () => {
       const u = getStoredUser();
       setUser(u);
-      if (u) setCredits(typeof u.credits === 'number' ? u.credits : parseFloat(String(u.credits)) || 0);
+      if (u) {
+        const total = typeof u.credits === 'number' ? u.credits : parseFloat(String(u.credits)) || 0;
+        const reserved = u.credits_reserved ?? 0;
+        setCredits(total - reserved);
+      }
     };
     window.addEventListener('storage', onStorage);
     window.addEventListener('auth-changed', handleAuthChange);

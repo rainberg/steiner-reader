@@ -173,7 +173,7 @@ export default function ProfilePage() {
           </div>
           <div className="flex items-center justify-between py-2 border-b border-gray-100">
             <span className="text-sm text-gray-500">积分</span>
-            <span className="text-xs bg-amber-50 text-amber-700 border border-amber-200/60 px-2 py-0.5 rounded-full">{user.credits} 点</span>
+            <span className="text-xs bg-amber-50 text-amber-700 border border-amber-200/60 px-2 py-0.5 rounded-full">{(user.credits - (user.credits_reserved ?? 0)).toFixed(0)} 点{(user.credits_reserved ?? 0) > 0 ? ` (冻结 ${user.credits_reserved?.toFixed(0) ?? 0})` : ''}</span>
           </div>
           {user.created_at && (
             <div className="flex items-center justify-between py-2">
