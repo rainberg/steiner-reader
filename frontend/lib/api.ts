@@ -735,7 +735,8 @@ export async function fetchSentenceEdits(sentenceId: number): Promise<EditLogEnt
 export async function fetchContributions(lectureId: number): Promise<ContributionDisplay[]> {
   const res = await authFetch(`/api/lectures/${lectureId}/contributions`, { cache: 'no-store' });
   if (!res.ok) throw new Error('Failed to fetch contributions');
-  return res.json();
+  const data = await res.json();
+  return data.contributions || data || [];
 }
 
 export async function fetchSentenceRevisions(sentenceId: number): Promise<RevisionItem[]> {

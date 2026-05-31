@@ -322,10 +322,19 @@ async def check_download_access(
         select(LectureAccess).where(
             LectureAccess.user_id == user_id,
             LectureAccess.lecture_id == lecture_id,
-            LectureAccess.access_type == "download",
         )
     )
-    return result.scalar_one_or_none() is not None
+    if result.scalar_one_or_none():
+        return True
+
+    contrib_result = await db.execute(
+        select(Contribution).where(
+            Contribution.user_id == user_id,
+            Contribution.lecture_id == lecture_id,
+            Contribution.grants_download == True,
+        )
+    )
+    return contrib_result.scalar_one_or_none() is not None
 
 
 async def get_access_types(

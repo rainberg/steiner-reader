@@ -27,7 +27,7 @@ from app.services.auth_client import (
     refund_credits,
     get_credits_balance,
 )
-from app.services.credit_service import add_contribution, atomic_deduct_credits
+from app.services.credit_service import add_contribution, atomic_deduct_credits, grant_access
 from app.services.translation_service import (
     is_lecture_running,
     start_translation_job,
@@ -127,6 +127,7 @@ async def translate_lecture(
                 cost=COST_PER_LECTURE,
                 grants_download=True,
             )
+            await grant_access(db, user.id, lecture_id, "download")
             await db.commit()
         return {
             "lecture_id": lecture_id,
@@ -326,6 +327,7 @@ async def _do_translate_lecture(lecture_id: int, book_id: int, token: str, user_
                     cost=COST_PER_LECTURE,
                     grants_download=True,
                 )
+                await grant_access(db, user_id, lecture_id, "download")
                 await db.commit()
 
             logger.info(f"Lecture {lecture_id}: done, {total} sentences translated")
