@@ -194,7 +194,7 @@ export default function ProfilePage() {
       await bindEmail(bindEmailAddr);
       setBindEmailSuccess('邮箱绑定成功');
       await refreshUser();
-      setBindEmailAddr(''); setBindEmailPw('');
+      setBindEmailAddr('');
     } catch (err: unknown) { setBindEmailError(err instanceof Error ? err.message : '绑定失败'); }
     finally { setBindEmailLoading(false); }
   };
