@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { clearAuth, fetchMe, getStoredUser, getUserCredits, updateStoredCredits, User } from '@/lib/api';
+import { clearAuth, fetchMe, getStoredUser, updateStoredCredits, User } from '@/lib/api';
 import SearchModal from './SearchModal';
 
 export default function Header() {
@@ -12,26 +12,35 @@ export default function Header() {
   const [credits, setCredits] = useState(0);
   const [pendingRecharges, setPendingRecharges] = useState(0);
 
-  useEffect(() => {
+  const loadUserInfo = async () => {
     const stored = getStoredUser();
-    if (!stored) return;
+    if (!stored) {
+      setUser(null);
+      setCredits(0);
+      return;
+    }
     setUser(stored);
-    setCredits(getUserCredits());
-    fetchMe()
-      .then(nextUser => {
-        setUser(nextUser);
-        const total = typeof nextUser.credits === 'number' ? nextUser.credits : parseFloat(String(nextUser.credits)) || 0;
-        const reserved = nextUser.credits_reserved ?? 0;
-        const available = total - reserved;
-        setCredits(available);
-        updateStoredCredits(available);
-      })
-      .catch(() => {
-        clearAuth();
-        setUser(null);
-      });
+    const total = typeof stored.credits === 'number' ? stored.credits : parseFloat(String(stored.credits)) || 0;
+    const reserved = stored.credits_reserved ?? 0;
+    setCredits(total - reserved);
+    try {
+      const nextUser = await fetchMe();
+      setUser(nextUser);
+      const t = typeof nextUser.credits === 'number' ? nextUser.credits : parseFloat(String(nextUser.credits)) || 0;
+      const r = nextUser.credits_reserved ?? 0;
+      const available = t - r;
+      setCredits(available);
+      updateStoredCredits(available);
+    } catch {
+      clearAuth();
+      setUser(null);
+    }
+  };
 
-    if (stored.is_admin) {
+  useEffect(() => {
+    loadUserInfo();
+
+    if (getStoredUser()?.is_admin) {
       const poll = () => {
         const token = localStorage.getItem('access_token');
         if (!token) return;
@@ -57,13 +66,7 @@ export default function Header() {
       }
     };
     const handleAuthChange = () => {
-      const u = getStoredUser();
-      setUser(u);
-      if (u) {
-        const total = typeof u.credits === 'number' ? u.credits : parseFloat(String(u.credits)) || 0;
-        const reserved = u.credits_reserved ?? 0;
-        setCredits(total - reserved);
-      }
+      loadUserInfo();
     };
     window.addEventListener('storage', onStorage);
     window.addEventListener('auth-changed', handleAuthChange);
