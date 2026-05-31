@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -9,6 +9,7 @@ import {
   fetchMyTransactions, CreditTransaction,
   bindPhone, bindEmail, unbindPhone, unbindEmail, deleteAccount,
 } from '@/lib/api';
+import { SliderCaptchaWidget, SmsCodeInput } from '@/app/components/SmsVerification';
 
 type TabKey = 'info' | 'security' | 'credits' | 'account';
 
@@ -50,6 +51,9 @@ export default function ProfilePage() {
   const [bindPhoneLoading, setBindPhoneLoading] = useState(false);
   const [bindPhoneError, setBindPhoneError] = useState('');
   const [bindPhoneSuccess, setBindPhoneSuccess] = useState('');
+  const [bindCaptchaId, setBindCaptchaId] = useState('');
+  const [bindCaptchaX, setBindCaptchaX] = useState(0);
+  const [bindCaptchaVerified, setBindCaptchaVerified] = useState(false);
 
   const [bindEmailAddr, setBindEmailAddr] = useState('');
   const [bindEmailPw, setBindEmailPw] = useState('');
@@ -156,15 +160,30 @@ export default function ProfilePage() {
     finally { setUsernameLoading(false); }
   };
 
+  const handleBindCaptchaVerified = useCallback((captchaId: string, captchaX: number) => {
+    setBindCaptchaId(captchaId);
+    setBindCaptchaX(captchaX);
+    setBindCaptchaVerified(true);
+  }, []);
+
   const handleBindPhone = async (e: React.FormEvent) => {
     e.preventDefault();
     setBindPhoneError(''); setBindPhoneSuccess('');
+    if (!bindCaptchaVerified) {
+      setBindPhoneError('请先完成滑块验证');
+      return;
+    }
+    if (!bindPhoneNum || !bindPhoneCode) {
+      setBindPhoneError('请输入手机号和验证码');
+      return;
+    }
     setBindPhoneLoading(true);
     try {
       await bindPhone(bindPhoneNum, bindPhoneCode, bindPhonePw || undefined);
       setBindPhoneSuccess('手机号绑定成功');
       await refreshUser();
       setBindPhoneNum(''); setBindPhoneCode(''); setBindPhonePw('');
+      setBindCaptchaVerified(false);
     } catch (err: unknown) { setBindPhoneError(err instanceof Error ? err.message : '绑定失败'); }
     finally { setBindPhoneLoading(false); }
   };
@@ -353,8 +372,16 @@ export default function ProfilePage() {
                   {bindPhoneError && <div className="bg-red-50/80 border border-red-100 text-red-600 text-sm px-3 py-2 rounded-lg mb-3">{bindPhoneError}</div>}
                   {bindPhoneSuccess && <div className="bg-green-50/80 border border-green-100 text-green-600 text-sm px-3 py-2 rounded-lg mb-3">{bindPhoneSuccess}</div>}
                   <form onSubmit={handleBindPhone} className="space-y-3">
-                    <input type="tel" value={bindPhoneNum} onChange={e => setBindPhoneNum(e.target.value)} placeholder="手机号" pattern="1[3-9]\d{9}" required className={inputClass} />
-                    <input type="text" value={bindPhoneCode} onChange={e => setBindPhoneCode(e.target.value)} placeholder="4位验证码" maxLength={4} required className={inputClass} />
+                    <SliderCaptchaWidget onVerified={handleBindCaptchaVerified} />
+                    <SmsCodeInput
+                      phoneValue={bindPhoneNum}
+                      onPhoneChange={setBindPhoneNum}
+                      codeValue={bindPhoneCode}
+                      onCodeChange={setBindPhoneCode}
+                      captchaId={bindCaptchaId}
+                      captchaX={bindCaptchaX}
+                      captchaVerified={bindCaptchaVerified}
+                    />
                     <input type="password" value={bindPhonePw} onChange={e => setBindPhonePw(e.target.value)} placeholder="当前密码（如有）" className={inputClass} />
                     <button type="submit" disabled={bindPhoneLoading} className="btn-primary w-full text-sm">{bindPhoneLoading ? '绑定中...' : '绑定手机号'}</button>
                   </form>
