@@ -26,7 +26,9 @@ function SliderCaptchaWidget({ onVerified }: { onVerified: (captchaId: string, c
   const [isDragging, setIsDragging] = useState(false);
   const [verified, setVerified] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [imgScale, setImgScale] = useState(1);
   const trackRef = useRef<HTMLDivElement>(null);
+  const bgRef = useRef<HTMLImageElement>(null);
   const startXRef = useRef(0);
   const startSliderXRef = useRef(0);
 
@@ -37,6 +39,7 @@ function SliderCaptchaWidget({ onVerified }: { onVerified: (captchaId: string, c
       setCaptcha(data);
       setSliderX(0);
       setVerified(false);
+      setImgScale(1);
     } catch {
     } finally {
       setLoading(false);
@@ -47,11 +50,31 @@ function SliderCaptchaWidget({ onVerified }: { onVerified: (captchaId: string, c
     loadCaptcha();
   }, [loadCaptcha]);
 
+  const updateScale = useCallback(() => {
+    if (bgRef.current && bgRef.current.naturalWidth > 0) {
+      setImgScale(bgRef.current.clientWidth / bgRef.current.naturalWidth);
+    }
+  }, []);
+
+  useEffect(() => {
+    const img = bgRef.current;
+    if (!img) return;
+    const onLoad = () => updateScale();
+    if (img.complete) onLoad();
+    else img.addEventListener('load', onLoad);
+    const observer = new ResizeObserver(() => updateScale());
+    observer.observe(img);
+    return () => {
+      img.removeEventListener('load', onLoad);
+      observer.disconnect();
+    };
+  }, [captcha, updateScale]);
+
   useEffect(() => {
     if (verified && captcha) {
-      onVerified(captcha.captcha_id, Math.round(sliderX));
+      onVerified(captcha.captcha_id, Math.round(sliderX / imgScale));
     }
-  }, [verified, captcha, sliderX, onVerified]);
+  }, [verified, captcha, sliderX, imgScale, onVerified]);
 
   const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
     if (verified) return;
@@ -63,21 +86,23 @@ function SliderCaptchaWidget({ onVerified }: { onVerified: (captchaId: string, c
 
   const handleDragMove = useCallback(
     (e: MouseEvent | TouchEvent) => {
-      if (!isDragging) return;
+      if (!isDragging || !captcha) return;
       const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
       const delta = clientX - startXRef.current;
-      const maxX = trackRef.current ? trackRef.current.offsetWidth - 50 : 280;
+      const scaledPW = captcha.puzzle_width * imgScale;
+      const maxX = trackRef.current ? trackRef.current.offsetWidth - scaledPW : 280;
       const newX = Math.max(0, Math.min(maxX, startSliderXRef.current + delta));
       setSliderX(newX);
     },
-    [isDragging]
+    [isDragging, captcha, imgScale]
   );
 
   const handleDragEnd = useCallback(async () => {
     if (!isDragging || !captcha) return;
     setIsDragging(false);
     try {
-      const result = await verifySliderCaptcha(captcha.captcha_id, Math.round(sliderX));
+      const originalX = Math.round(sliderX / imgScale);
+      const result = await verifySliderCaptcha(captcha.captcha_id, originalX);
       if (result.success) {
         setVerified(true);
       } else {
@@ -88,7 +113,7 @@ function SliderCaptchaWidget({ onVerified }: { onVerified: (captchaId: string, c
       setVerified(false);
       await loadCaptcha();
     }
-  }, [isDragging, captcha, sliderX, loadCaptcha]);
+  }, [isDragging, captcha, sliderX, imgScale, loadCaptcha]);
 
   useEffect(() => {
     if (!isDragging) return;
@@ -117,19 +142,29 @@ function SliderCaptchaWidget({ onVerified }: { onVerified: (captchaId: string, c
     );
   }
 
+  const scaledY = captcha.y_position * imgScale;
+  const scaledPW = captcha.puzzle_width * imgScale;
+
   return (
     <div>
       <label className="block text-sm font-medium text-gray-600 mb-1">滑块验证</label>
       <div className="relative rounded-lg overflow-hidden border border-gray-200 bg-gray-100 select-none">
-        <div className="relative" style={{ height: 160 }}>
-          <img src={captcha.bg_image} alt="" className="w-full h-full object-cover" draggable={false} />
+        <div className="relative">
+          <img
+            ref={bgRef}
+            src={captcha.bg_image}
+            alt=""
+            className="w-full h-auto block"
+            draggable={false}
+          />
           <img
             src={captcha.slider_image}
             alt=""
             className="absolute top-0 left-0"
             style={{
-              transform: `translateX(${sliderX}px) translateY(${captcha.y_position}px)`,
-              height: 160,
+              transform: `translateX(${sliderX}px) translateY(${scaledY}px)`,
+              width: scaledPW,
+              height: scaledPW,
             }}
             draggable={false}
           />
@@ -137,11 +172,11 @@ function SliderCaptchaWidget({ onVerified }: { onVerified: (captchaId: string, c
         <div ref={trackRef} className="relative h-10 bg-gray-200 border-t border-gray-300 cursor-pointer">
           <div
             className="absolute top-0 left-0 h-full bg-indigo-100 rounded-l-lg"
-            style={{ width: sliderX + 50 }}
+            style={{ width: sliderX + scaledPW }}
           />
           <div
-            className="absolute top-1 left-0 h-8 w-[50px] bg-white border border-gray-300 rounded-lg shadow-sm flex items-center justify-center text-gray-400"
-            style={{ transform: `translateX(${sliderX}px)` }}
+            className="absolute top-1 left-0 h-8 bg-white border border-gray-300 rounded-lg shadow-sm flex items-center justify-center text-gray-400"
+            style={{ transform: `translateX(${sliderX}px)`, width: scaledPW }}
             onMouseDown={handleDragStart}
             onTouchStart={handleDragStart}
           >

@@ -28,7 +28,7 @@ DB_PASSWORD = "***"
 XHTML_NS = "http://www.w3.org/1999/xhtml"
 
 # ── Sentence Splitter ──────────────────────────────────────
-_SENTENCE_BREAK = re.compile(r'(?<=[.!?])\s+(?=[A-ZÄÖÜ"«„])')
+_SENTENCE_BREAK = re.compile(r'(?<=[.!?])(?<!\d\.)(?<!\d\d\.)\s+(?=[A-ZÄÖÜ"«„])')
 
 def split_sentences(text: str) -> list[str]:
     """Split German text into sentences."""

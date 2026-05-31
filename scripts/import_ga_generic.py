@@ -341,7 +341,7 @@ class GAImporter:
             
             # Split into sentences
             para_text = re.sub(r'\s+', ' ', para_text).strip()
-            sentences = re.split(r'(?<=[.!?])\s+(?=[A-ZÄÖÜ])', para_text)
+            sentences = re.split(r'(?<=[.!?])(?<!\d\.)(?<!\d\d\.)\s+(?=[A-ZÄÖÜ])', para_text)
             sentences = [s.strip() for s in sentences if len(s.strip()) > 5]
             
             for sent_idx, sent_text in enumerate(sentences):

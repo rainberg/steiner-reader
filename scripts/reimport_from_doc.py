@@ -50,7 +50,7 @@ def parse_german_date(text):
         return f"{year}-{month:02d}-{int(day):02d}"
     return None
 
-SENTENCE_BREAK = re.compile(r'(?<=[.!?])\s+(?=[A-ZÄÖÜ"«„0-9])')
+SENTENCE_BREAK = re.compile(r'(?<=[.!?])(?<!\d\.)(?<!\d\d\.)\s+(?=[A-ZÄÖÜ"«„0-9])')
 
 
 def normalize(text):

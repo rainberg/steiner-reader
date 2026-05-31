@@ -118,6 +118,9 @@ Steiner Reader 是一个鲁道夫·施泰纳（Rudolf Steiner）德语著作的�
 | 5 | **所有书加载不了** | PostgreSQL 磁盘 100% 满，`/tmp/` 下约 2GB 旧 SQL 备份文件导致无法启动 | 清理 `/tmp/` 旧文件释放 1.6GB |
 | 6 | **edits.py 语法错误** | `try:` 块缺少 `except`/`finally`，Python 语法错误导致后端无法启动 | 补全 `try/except` 块 |
 | 7 | **前端构建未更新** | `git reset --hard` 后只重启服务，没有 `npm run build` | 部署命令加入 `npm run build` |
+| 8 | **管理员充值显示 [object Object]** | 前端发送 `{ credits: amount }` 但 auth-service 期望 `{ amount }`；前端读取 `data.username`/`data.added` 但 auth-service 返回 `user_id`/`amount` | 修正请求字段名为 `amount`，修正响应字段名为 `amount`/`new_credits` |
+| 9 | **贡献列表不显示** | 后端返回 `{"contributions": [...]}` 但前端 `fetchContributions` 直接 `res.json()` 得到对象而非数组 | `fetchContributions` 改为 `return data.contributions || data || []` |
+| 10 | **下载链接不出现** | 翻译流程未调用 `grant_access`（无 `LectureAccess` 记录）；`check_download_access` 只查 `access_type=="download"` 忽略翻译贡献者 | 翻译流程添加 `grant_access(db, user_id, lecture_id, "download")`；`check_download_access` 增加 Contribution `grants_download=True` 兜底查询 |
 
 ### 第二轮修复涉及的关键代码变更
 
@@ -158,6 +161,48 @@ const [loadError, setLoadError] = useState<string | null>(null);
 // fetchParagraphs 加 .catch() 兜底
 // catch 块不再 router.push，改为 setLoadError
 // 显示错误信息和返回链接，而非自动跳转
+```
+
+**`credit_service.py` — `check_download_access` 兜底查询**：
+```python
+# 先查 LectureAccess（任何类型）
+result = await db.execute(
+    select(LectureAccess).where(
+        LectureAccess.user_id == user_id,
+        LectureAccess.lecture_id == lecture_id,
+    )
+)
+if result.scalar_one_or_none():
+    return True
+# 兜底查 Contribution（grants_download=True）
+contrib_result = await db.execute(
+    select(Contribution).where(
+        Contribution.user_id == user_id,
+        Contribution.lecture_id == lecture_id,
+        Contribution.grants_download == True,
+    )
+)
+return contrib_result.scalar_one_or_none() is not None
+```
+
+**`translate.py` — 翻译后自动授予下载权限**：
+```python
+await add_contribution(db, user_id, lecture_id, ..., grants_download=True)
+await grant_access(db, user_id, lecture_id, "download")  # 新增
+```
+
+**`api.ts` — 管理员充值字段修正**：
+```typescript
+// 请求体: { credits: amount } → { amount, remark }
+body: JSON.stringify({ amount, remark }),
+// 响应: data.username/data.added → data.amount/data.new_credits
+setSuccess(`已添加 ${data.amount} 点，当前总额: ${data.new_credits}`);
+```
+
+**`api.ts` — 贡献列表解析修正**：
+```typescript
+const data = await res.json();
+return data.contributions || data || [];  // 从对象中提取数组
 ```
 
 ### 冻结积分修复
@@ -347,6 +392,7 @@ scripts/
 最近提交：
 
 ```
+3d200d6 fix: 贡献列表不显示(解析contributions对象) + 下载链接不出现(翻译后未grant_access + check_download_access只查download类型)
 39f0e5a fix: 积分扣费409根因修复 - settle/refund使用不同reference_id避免与reserve冲突
 a988dcc fix: edits.py语法错误(try缺少except) + 投票扣费错误处理
 6e4475c fix: 积分扣费409处理 + 注册缺失路由(downloads/edits) + 前端错误显示改进
