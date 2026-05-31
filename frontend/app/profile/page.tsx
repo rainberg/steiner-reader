@@ -11,11 +11,12 @@ import {
 } from '@/lib/api';
 import { SliderCaptchaWidget, SmsCodeInput } from '@/app/components/SmsVerification';
 
-type TabKey = 'info' | 'security' | 'credits' | 'account';
+type TabKey = 'info' | 'security' | 'binding' | 'credits' | 'account';
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'info', label: '个人信息' },
   { key: 'security', label: '安全设置' },
+  { key: 'binding', label: '绑定管理' },
   { key: 'credits', label: '积分记录' },
   { key: 'account', label: '账户' },
 ];
@@ -47,7 +48,6 @@ export default function ProfilePage() {
 
   const [bindPhoneNum, setBindPhoneNum] = useState('');
   const [bindPhoneCode, setBindPhoneCode] = useState('');
-  const [bindPhonePw, setBindPhonePw] = useState('');
   const [bindPhoneLoading, setBindPhoneLoading] = useState(false);
   const [bindPhoneError, setBindPhoneError] = useState('');
   const [bindPhoneSuccess, setBindPhoneSuccess] = useState('');
@@ -56,12 +56,10 @@ export default function ProfilePage() {
   const [bindCaptchaVerified, setBindCaptchaVerified] = useState(false);
 
   const [bindEmailAddr, setBindEmailAddr] = useState('');
-  const [bindEmailPw, setBindEmailPw] = useState('');
   const [bindEmailLoading, setBindEmailLoading] = useState(false);
   const [bindEmailError, setBindEmailError] = useState('');
   const [bindEmailSuccess, setBindEmailSuccess] = useState('');
 
-  const [unbindPw, setUnbindPw] = useState('');
   const [unbindLoading, setUnbindLoading] = useState(false);
   const [unbindError, setUnbindError] = useState('');
 
@@ -179,10 +177,10 @@ export default function ProfilePage() {
     }
     setBindPhoneLoading(true);
     try {
-      await bindPhone(bindPhoneNum, bindPhoneCode, bindPhonePw || undefined);
+      await bindPhone(bindPhoneNum, bindPhoneCode);
       setBindPhoneSuccess('手机号绑定成功');
       await refreshUser();
-      setBindPhoneNum(''); setBindPhoneCode(''); setBindPhonePw('');
+      setBindPhoneNum(''); setBindPhoneCode('');
       setBindCaptchaVerified(false);
     } catch (err: unknown) { setBindPhoneError(err instanceof Error ? err.message : '绑定失败'); }
     finally { setBindPhoneLoading(false); }
@@ -193,7 +191,7 @@ export default function ProfilePage() {
     setBindEmailError(''); setBindEmailSuccess('');
     setBindEmailLoading(true);
     try {
-      await bindEmail(bindEmailAddr, bindEmailPw || undefined);
+      await bindEmail(bindEmailAddr);
       setBindEmailSuccess('邮箱绑定成功');
       await refreshUser();
       setBindEmailAddr(''); setBindEmailPw('');
@@ -204,9 +202,8 @@ export default function ProfilePage() {
   const handleUnbindPhone = async () => {
     setUnbindError(''); setUnbindLoading(true);
     try {
-      await unbindPhone(unbindPw || undefined);
+      await unbindPhone();
       await refreshUser();
-      setUnbindPw('');
     } catch (err: unknown) { setUnbindError(err instanceof Error ? err.message : '解绑失败'); }
     finally { setUnbindLoading(false); }
   };
@@ -214,9 +211,8 @@ export default function ProfilePage() {
   const handleUnbindEmail = async () => {
     setUnbindError(''); setUnbindLoading(true);
     try {
-      await unbindEmail(unbindPw || undefined);
+      await unbindEmail();
       await refreshUser();
-      setUnbindPw('');
     } catch (err: unknown) { setUnbindError(err instanceof Error ? err.message : '解绑失败'); }
     finally { setUnbindLoading(false); }
   };
@@ -323,123 +319,120 @@ export default function ProfilePage() {
       )}
 
       {activeTab === 'security' && (
-        <div className="space-y-6">
-          <div className="card p-6">
-            <h2 className="text-base font-semibold text-gray-800 mb-4">修改密码</h2>
-            {pwError && <div className="bg-red-50/80 border border-red-100 text-red-600 text-sm px-3 py-2 rounded-lg mb-4">{pwError}</div>}
-            {pwSuccess && <div className="bg-green-50/80 border border-green-100 text-green-600 text-sm px-3 py-2 rounded-lg mb-4">{pwSuccess}</div>}
-            <form onSubmit={handleChangePassword} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">当前密码</label>
-                <input type="password" value={oldPassword} onChange={e => setOldPassword(e.target.value)} placeholder="输入当前密码" required className={inputClass} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">新密码</label>
-                <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="至少 6 个字符" minLength={6} required className={inputClass} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">确认新密码</label>
-                <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="再次输入新密码" required className={inputClass} />
-              </div>
-              <button type="submit" disabled={pwLoading} className="btn-primary w-full">{pwLoading ? '修改中...' : '修改密码'}</button>
-            </form>
-          </div>
+        <div className="card p-6">
+          <h2 className="text-base font-semibold text-gray-800 mb-4">修改密码</h2>
+          {pwError && <div className="bg-red-50/80 border border-red-100 text-red-600 text-sm px-3 py-2 rounded-lg mb-4">{pwError}</div>}
+          {pwSuccess && <div className="bg-green-50/80 border border-green-100 text-green-600 text-sm px-3 py-2 rounded-lg mb-4">{pwSuccess}</div>}
+          <form onSubmit={handleChangePassword} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">当前密码</label>
+              <input type="password" value={oldPassword} onChange={e => setOldPassword(e.target.value)} placeholder="输入当前密码" required className={inputClass} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">新密码</label>
+              <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="至少 6 个字符" minLength={6} required className={inputClass} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">确认新密码</label>
+              <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="再次输入新密码" required className={inputClass} />
+            </div>
+            <button type="submit" disabled={pwLoading} className="btn-primary w-full">{pwLoading ? '修改中...' : '修改密码'}</button>
+          </form>
+        </div>
+      )}
 
-          <div className="card p-6">
-            <h2 className="text-base font-semibold text-gray-800 mb-4">绑定管理</h2>
-            <p className="text-xs text-gray-400 mb-4">同一账号可同时绑定手机号和邮箱，支持两种方式登录。解绑后手机号/邮箱可绑定到其他账号。</p>
+      {activeTab === 'binding' && (
+        <div className="card p-6">
+          <h2 className="text-base font-semibold text-gray-800 mb-4">绑定管理</h2>
+          <p className="text-xs text-gray-400 mb-4">同一账号可同时绑定手机号和邮箱，支持两种方式登录。解绑后手机号/邮箱可绑定到其他账号。</p>
 
-            <div className="space-y-4">
-              <div className="flex items-center justify-between py-3 border-b border-gray-100">
-                <div>
-                  <span className="text-sm font-medium text-gray-700">手机号</span>
-                  {hasPhone ? (
-                    <span className="text-sm text-gray-500 ml-2">{user.phone}</span>
-                  ) : (
-                    <span className="text-xs text-gray-400 ml-2">未绑定</span>
-                  )}
-                </div>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between py-3 border-b border-gray-100">
+              <div>
+                <span className="text-sm font-medium text-gray-700">手机号</span>
                 {hasPhone ? (
-                  <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">已绑定</span>
+                  <span className="text-sm text-gray-500 ml-2">{user.phone}</span>
                 ) : (
-                  <span className="text-xs text-gray-400 bg-gray-50 px-2 py-0.5 rounded">未绑定</span>
+                  <span className="text-xs text-gray-400 ml-2">未绑定</span>
                 )}
               </div>
-
-              {!hasPhone && (
-                <div className="bg-gray-50/50 rounded-lg p-4">
-                  <h3 className="text-sm font-medium text-gray-700 mb-3">绑定手机号</h3>
-                  {bindPhoneError && <div className="bg-red-50/80 border border-red-100 text-red-600 text-sm px-3 py-2 rounded-lg mb-3">{bindPhoneError}</div>}
-                  {bindPhoneSuccess && <div className="bg-green-50/80 border border-green-100 text-green-600 text-sm px-3 py-2 rounded-lg mb-3">{bindPhoneSuccess}</div>}
-                  <form onSubmit={handleBindPhone} className="space-y-3">
-                    <SliderCaptchaWidget onVerified={handleBindCaptchaVerified} />
-                    <SmsCodeInput
-                      phoneValue={bindPhoneNum}
-                      onPhoneChange={setBindPhoneNum}
-                      codeValue={bindPhoneCode}
-                      onCodeChange={setBindPhoneCode}
-                      captchaId={bindCaptchaId}
-                      captchaX={bindCaptchaX}
-                      captchaVerified={bindCaptchaVerified}
-                    />
-                    <input type="password" value={bindPhonePw} onChange={e => setBindPhonePw(e.target.value)} placeholder="当前密码（如有）" className={inputClass} />
-                    <button type="submit" disabled={bindPhoneLoading} className="btn-primary w-full text-sm">{bindPhoneLoading ? '绑定中...' : '绑定手机号'}</button>
-                  </form>
-                </div>
-              )}
-
-              <div className="flex items-center justify-between py-3 border-b border-gray-100">
-                <div>
-                  <span className="text-sm font-medium text-gray-700">邮箱</span>
-                  {hasEmail ? (
-                    <span className="text-sm text-gray-500 ml-2">{user.email}</span>
-                  ) : (
-                    <span className="text-xs text-gray-400 ml-2">未绑定</span>
-                  )}
-                </div>
-                {hasEmail ? (
-                  <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">已绑定</span>
-                ) : (
-                  <span className="text-xs text-gray-400 bg-gray-50 px-2 py-0.5 rounded">未绑定</span>
-                )}
-              </div>
-
-              {!hasEmail && (
-                <div className="bg-gray-50/50 rounded-lg p-4">
-                  <h3 className="text-sm font-medium text-gray-700 mb-3">绑定邮箱</h3>
-                  {bindEmailError && <div className="bg-red-50/80 border border-red-100 text-red-600 text-sm px-3 py-2 rounded-lg mb-3">{bindEmailError}</div>}
-                  {bindEmailSuccess && <div className="bg-green-50/80 border border-green-100 text-green-600 text-sm px-3 py-2 rounded-lg mb-3">{bindEmailSuccess}</div>}
-                  <form onSubmit={handleBindEmail} className="space-y-3">
-                    <input type="email" value={bindEmailAddr} onChange={e => setBindEmailAddr(e.target.value)} placeholder="邮箱地址" required className={inputClass} />
-                    <input type="password" value={bindEmailPw} onChange={e => setBindEmailPw(e.target.value)} placeholder="当前密码（如有）" className={inputClass} />
-                    <button type="submit" disabled={bindEmailLoading} className="btn-primary w-full text-sm">{bindEmailLoading ? '绑定中...' : '绑定邮箱'}</button>
-                  </form>
-                </div>
-              )}
-
-              {(hasPhone || hasEmail) && (
-                <div className="bg-gray-50/50 rounded-lg p-4 mt-4">
-                  <h3 className="text-sm font-medium text-gray-700 mb-3">解绑</h3>
-                  {unbindError && <div className="bg-red-50/80 border border-red-100 text-red-600 text-sm px-3 py-2 rounded-lg mb-3">{unbindError}</div>}
-                  <p className="text-xs text-gray-400 mb-3">解绑后，该手机号/邮箱可绑定到其他账号。至少保留一种登录方式。</p>
-                  <input type="password" value={unbindPw} onChange={e => setUnbindPw(e.target.value)} placeholder="当前密码（如有）" className={inputClass + " mb-3"} />
-                  <div className="flex gap-3">
-                    {hasPhone && (
-                      <button type="button" onClick={handleUnbindPhone} disabled={unbindLoading}
-                        className="flex-1 px-3 py-2 bg-orange-50 border border-orange-200 text-orange-600 rounded-lg text-sm font-medium hover:bg-orange-100 transition-colors disabled:opacity-50">
-                        {unbindLoading ? '解绑中...' : '解绑手机号'}
-                      </button>
-                    )}
-                    {hasEmail && (
-                      <button type="button" onClick={handleUnbindEmail} disabled={unbindLoading}
-                        className="flex-1 px-3 py-2 bg-orange-50 border border-orange-200 text-orange-600 rounded-lg text-sm font-medium hover:bg-orange-100 transition-colors disabled:opacity-50">
-                        {unbindLoading ? '解绑中...' : '解绑邮箱'}
-                      </button>
-                    )}
-                  </div>
-                </div>
+              {hasPhone ? (
+                <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">已绑定</span>
+              ) : (
+                <span className="text-xs text-gray-400 bg-gray-50 px-2 py-0.5 rounded">未绑定</span>
               )}
             </div>
+
+            {!hasPhone && (
+              <div className="bg-gray-50/50 rounded-lg p-4">
+                <h3 className="text-sm font-medium text-gray-700 mb-3">绑定手机号</h3>
+                {bindPhoneError && <div className="bg-red-50/80 border border-red-100 text-red-600 text-sm px-3 py-2 rounded-lg mb-3">{bindPhoneError}</div>}
+                {bindPhoneSuccess && <div className="bg-green-50/80 border border-green-100 text-green-600 text-sm px-3 py-2 rounded-lg mb-3">{bindPhoneSuccess}</div>}
+                <form onSubmit={handleBindPhone} className="space-y-3">
+                  <SliderCaptchaWidget onVerified={handleBindCaptchaVerified} />
+                  <SmsCodeInput
+                    phoneValue={bindPhoneNum}
+                    onPhoneChange={setBindPhoneNum}
+                    codeValue={bindPhoneCode}
+                    onCodeChange={setBindPhoneCode}
+                    captchaId={bindCaptchaId}
+                    captchaX={bindCaptchaX}
+                    captchaVerified={bindCaptchaVerified}
+                  />
+                  <button type="submit" disabled={bindPhoneLoading} className="btn-primary w-full text-sm">{bindPhoneLoading ? '绑定中...' : '绑定手机号'}</button>
+                </form>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between py-3 border-b border-gray-100">
+              <div>
+                <span className="text-sm font-medium text-gray-700">邮箱</span>
+                {hasEmail ? (
+                  <span className="text-sm text-gray-500 ml-2">{user.email}</span>
+                ) : (
+                  <span className="text-xs text-gray-400 ml-2">未绑定</span>
+                )}
+              </div>
+              {hasEmail ? (
+                <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">已绑定</span>
+              ) : (
+                <span className="text-xs text-gray-400 bg-gray-50 px-2 py-0.5 rounded">未绑定</span>
+              )}
+            </div>
+
+            {!hasEmail && (
+              <div className="bg-gray-50/50 rounded-lg p-4">
+                <h3 className="text-sm font-medium text-gray-700 mb-3">绑定邮箱</h3>
+                {bindEmailError && <div className="bg-red-50/80 border border-red-100 text-red-600 text-sm px-3 py-2 rounded-lg mb-3">{bindEmailError}</div>}
+                {bindEmailSuccess && <div className="bg-green-50/80 border border-green-100 text-green-600 text-sm px-3 py-2 rounded-lg mb-3">{bindEmailSuccess}</div>}
+                <form onSubmit={handleBindEmail} className="space-y-3">
+                  <input type="email" value={bindEmailAddr} onChange={e => setBindEmailAddr(e.target.value)} placeholder="邮箱地址" required className={inputClass} />
+                  <button type="submit" disabled={bindEmailLoading} className="btn-primary w-full text-sm">{bindEmailLoading ? '绑定中...' : '绑定邮箱'}</button>
+                </form>
+              </div>
+            )}
+
+            {(hasPhone || hasEmail) && (
+              <div className="bg-gray-50/50 rounded-lg p-4 mt-4">
+                <h3 className="text-sm font-medium text-gray-700 mb-3">解绑</h3>
+                {unbindError && <div className="bg-red-50/80 border border-red-100 text-red-600 text-sm px-3 py-2 rounded-lg mb-3">{unbindError}</div>}
+                <p className="text-xs text-gray-400 mb-3">解绑后，该手机号/邮箱可绑定到其他账号。至少保留一种登录方式。</p>
+                <div className="flex gap-3">
+                  {hasPhone && (
+                    <button type="button" onClick={handleUnbindPhone} disabled={unbindLoading}
+                      className="flex-1 px-3 py-2 bg-orange-50 border border-orange-200 text-orange-600 rounded-lg text-sm font-medium hover:bg-orange-100 transition-colors disabled:opacity-50">
+                      {unbindLoading ? '解绑中...' : '解绑手机号'}
+                    </button>
+                  )}
+                  {hasEmail && (
+                    <button type="button" onClick={handleUnbindEmail} disabled={unbindLoading}
+                      className="flex-1 px-3 py-2 bg-orange-50 border border-orange-200 text-orange-600 rounded-lg text-sm font-medium hover:bg-orange-100 transition-colors disabled:opacity-50">
+                      {unbindLoading ? '解绑中...' : '解绑邮箱'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
