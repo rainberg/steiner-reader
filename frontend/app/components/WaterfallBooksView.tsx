@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { fetchBookSummariesPaginated, BookSummary } from '@/lib/api';
 
+const FIRST_PAGE_SIZE = 10;
 const PAGE_SIZE = 24;
 
 export default function WaterfallBooksView() {
@@ -15,9 +16,9 @@ export default function WaterfallBooksView() {
 
   const loadPage = useCallback(async (p: number) => {
     setLoading(true);
-    const data = await fetchBookSummariesPaginated({ page: p, page_size: PAGE_SIZE, sort_by: 'created_at', sort_dir: 'desc' });
+    const pageSize = p === 1 ? FIRST_PAGE_SIZE : PAGE_SIZE;
+    const data = await fetchBookSummariesPaginated({ page: p, page_size: pageSize, sort_by: 'created_at', sort_dir: 'desc' });
     if (p === 1) {
-      // Shuffle and set
       for (let i = data.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [data[i], data[j]] = [data[j], data[i]];
@@ -26,7 +27,7 @@ export default function WaterfallBooksView() {
     } else {
       setBooks(prev => [...prev, ...data]);
     }
-    setHasMore(data.length === PAGE_SIZE);
+    setHasMore(data.length === pageSize);
     setLoading(false);
   }, []);
 
