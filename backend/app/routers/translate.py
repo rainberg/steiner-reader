@@ -30,7 +30,7 @@ from app.services.auth_client import (
     refund_credits,
     get_credits_balance,
 )
-from app.services.credit_service import add_contribution, atomic_deduct_credits, grant_access, compute_translation_cost
+from app.services.credit_service import add_contribution, atomic_deduct_credits, grant_access, compute_translation_cost, compute_price
 from app.services.translation_service import (
     is_lecture_running,
     start_translation_job,
@@ -197,6 +197,9 @@ async def get_translation_cost(
 
     cost = int(await compute_translation_cost(db, total)) if total > 0 else 0
 
+    coefficient = await compute_price(db, "translate_per_sentence", Decimal("0"))
+    pricing_mode = "per_sentence" if coefficient > 0 else "fixed"
+
     user_credits = None
     can_afford = None
     if user:
@@ -211,6 +214,7 @@ async def get_translation_cost(
         "translated": translated,
         "remaining": remaining,
         "cost": cost,
+        "pricing_mode": pricing_mode,
         "already_translated": total > 0 and translated == total,
         "user_credits": user_credits,
         "can_afford": can_afford,

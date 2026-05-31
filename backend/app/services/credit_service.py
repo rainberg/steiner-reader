@@ -45,18 +45,24 @@ async def compute_price(db: AsyncSession, action: str, default: Decimal | None =
 
 
 async def compute_translation_cost(db: AsyncSession, sentence_count: int) -> Decimal:
-    """Compute translation cost: sentence_count * coefficient.
+    """Compute translation cost for a lecture.
 
-    Coefficient is read from CreditSetting ``translate_per_sentence``.
-    Falls back to 0.10 if not configured.
+    If ``translate_per_sentence`` coefficient is set (> 0), uses:
+        cost = sentence_count × coefficient
+    Otherwise falls back to fixed ``translate_per_lecture`` price (default 10).
     """
-    coefficient = await compute_price(db, "translate_per_sentence", Decimal("0.10"))
-    cost = Decimal(str(sentence_count)) * coefficient
-    return cost.quantize(Decimal("1"))
+    coefficient = await compute_price(db, "translate_per_sentence", Decimal("0"))
+    if coefficient > 0:
+        cost = Decimal(str(sentence_count)) * coefficient
+        return cost.quantize(Decimal("1"))
+
+    fixed_price = await compute_price(db, "translate_per_lecture", Decimal("10"))
+    return fixed_price.quantize(Decimal("1"))
 
 
 DEFAULT_CREDIT_SETTINGS = [
-    {"action": "translate_per_sentence", "price": Decimal("0.10"), "description": "翻译每句单价（系数）"},
+    {"action": "translate_per_sentence", "price": Decimal("0.10"), "description": "翻译每句单价（系数，0=使用固定价格）"},
+    {"action": "translate_per_lecture", "price": Decimal("10"), "description": "翻译单章固定价格（系数为0时生效）"},
     {"action": "download_per_lecture", "price": Decimal("5.00"), "description": "下载单个讲座"},
 ]
 

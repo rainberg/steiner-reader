@@ -591,7 +591,8 @@ function CreditSettingsTab({
   const [msg, setMsg] = useState("");
 
   const LABELS: Record<string, string> = {
-    translate_per_sentence: "翻译每句单价（系数）",
+    translate_per_sentence: "翻译每句单价（系数，0=使用固定价格）",
+    translate_per_lecture: "翻译单章固定价格（系数为0时生效）",
     download_per_lecture: "下载单个讲座",
     edit_translation_coefficient: "编辑译文系数 (每句×系数)",
     edit_source_coefficient: "编辑原文系数 (每句×系数)",
