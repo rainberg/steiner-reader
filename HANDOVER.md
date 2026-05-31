@@ -23,6 +23,8 @@ Steiner Reader 是一个鲁道夫·施泰纳（Rudolf Steiner）德语著作的�
 - **后端**: systemd `steiner-backend` — uvicorn on 127.0.0.1:8000
 - **前端**: systemd `steiner-frontend` — Next.js on 127.0.0.1:3000
 - **数据库**: PostgreSQL，用户 `steiner`，数据库 `steiner_reader`，密码 `Dd08120@`
+- **日志**: `/var/log/steiner-reader/backend.log`（stdout）、`/var/log/steiner-reader/backend-error.log`（stderr）
+- **磁盘**: 20GB，当前使用约 92%，需定期清理 `/tmp/` 下的旧备份文件
 - **部署命令**:
   ```bash
   # 推荐：git pull 方式部署
@@ -35,6 +37,12 @@ Steiner Reader 是一个鲁道夫·施泰纳（Rudolf Steiner）德语著作的�
   pscp -pw "3Ai9px4N5p" frontend\lib\api.ts root@66.154.112.162:/opt/steiner-reader/frontend/lib/api.ts
   plink -ssh root@66.154.112.162 -pw "3Ai9px4N5p" "cd /opt/steiner-reader/frontend && npm run build && systemctl restart steiner-frontend.service"
   ```
+
+### 开放环境（Oracle Frankfurt）
+- **服务器**: 89.168.93.94，SSH as ubuntu，密钥 `J:\99_备份\01_key\orcale\Oracle_Frankfurt.ppk`
+- **auth-service**: 部署在此服务器，数据库 `auth`，PostgreSQL 14
+- **steiner_reader 数据库备份**: `/tmp/steiner_reader_backup_20250531.sql.gz`（142 MB）
+- **连接方式**: `plink -ssh ubuntu@89.168.93.94 -i "J:\99_备份\01_key\orcale\Oracle_Frankfurt.ppk"`
 
 ---
 
@@ -81,9 +89,9 @@ Steiner Reader 是一个鲁道夫·施泰纳（Rudolf Steiner）德语著作的�
 
 ---
 
-## 三、本轮修复和新增内容（2026-05-31）
+## 三、修复记录
 
-### 🔴 高优先级 — 已完成
+### 第一轮修复（2026-05-31 上午）
 
 | # | 功能 | 修改文件 | 说明 |
 |---|------|---------|------|
@@ -92,11 +100,6 @@ Steiner Reader 是一个鲁道夫·施泰纳（Rudolf Steiner）德语著作的�
 | 3 | **孤儿任务检测** | `translation_service.py` | `detect_orphan_jobs()`，running 超过 30 分钟自动标记为 failed |
 | 4 | **translation-status is_running** | `translate.py` | 新增 `is_running` 字段从数据库查询 |
 | 5 | **PDF 下载** | `pdf_generator.py`, `downloads.py`, `page.tsx`, `api.ts` | reportlab 中德双语 PDF 生成 + 前端对接 |
-
-### 🟡 中优先级 — 已完成
-
-| # | 功能 | 修改文件 | 说明 |
-|---|------|---------|------|
 | 6 | **compute_price 默认值回退** | `credit_service.py` | 新增 `default: Decimal \| None = None` 参数 |
 | 7 | **add_contribution 死代码清理** | `credit_service.py`, `translate.py`, `downloads.py`, `edits.py` | 移除未使用的 `amount: Decimal` 参数 |
 | 8 | **fetchLecture/fetchParagraphs 改为 authFetch** | `api.ts` | 四个函数改用 `authFetch` 携带 Authorization header |
@@ -104,14 +107,75 @@ Steiner Reader 是一个鲁道夫·施泰纳（Rudolf Steiner）德语著作的�
 | 10 | **积分显示统一** | `auth.py`, `Header.tsx`, `profile/page.tsx`, `api.ts` | 统一显示可用积分（`credits - credits_reserved`） |
 | 11 | **自动化测试** | `pytest.ini`, `conftest.py`, 5 个测试文件 | 30 个测试全部通过 |
 
-### 🐛 BUG 修复
+### 第二轮修复（2026-05-31 下午）— 生产环境 BUG
 
-| # | 文件 | BUG 描述 |
-|---|------|---------|
-| 1 | `models.py` | `TranslationPublication`/`UserTranslationJob` 模型与生产数据库表结构不匹配（缺少 `book_id`/`scope`/`mode` 等字段），已对齐 |
-| 2 | `translate.py` | `set_publication_status`/`start_translation_job` 缺少 `book_id` 参数，已补充 |
-| 3 | `Header.tsx` | 状态栏显示总积分而非可用积分，与讲座页面不一致，已修复 |
-| 4 | `auth.py` | `/api/auth/me` 未返回 `credits_reserved`，前端无法计算可用积分，已修复 |
+| # | BUG | 根因 | 修复 |
+|---|-----|------|------|
+| 1 | **点击翻译显示"积分扣费失败"** | `reference_id=f"translate-lecture-{lecture_id}"` 每次翻译同一讲座都相同，auth-service 返回 409 | `reference_id` 加随机后缀 `uuid.uuid4().hex[:8]`；已付费用户检查 Contribution 记录免扣费；错误信息包含具体原因 |
+| 2 | **讲座 6993 打不开，跳转回目录** | `main.py` 缺少 `downloads`/`edits` 路由注册（404）；`fetchParagraphs` 无 `.catch()` 导致整个 `Promise.all` reject 后 `router.push` | 注册缺失路由；`fetchParagraphs` 加 `.catch()`；catch 块改为显示错误信息而非跳转 |
+| 3 | **翻译时显示"积分扣费失败: reference_id 已存在"** | auth-service 的 `credit_logs` 表对 `reference_id` 有全局唯一约束，`reserve` 和 `settle` 使用同一个 `reference_id` 导致 settle 必然 409 | settle 使用 `{ref_id}-settle` 后缀，refund 使用 `{ref_id}-refund` 后缀 |
+| 4 | **已付款讲座未公开显示** | 数据不一致：contribution 记录存在但 `is_published=false`，`translation_publications` 缺记录 | SQL 修复 8 条讲座 + 手动修复 6993 |
+| 5 | **所有书加载不了** | PostgreSQL 磁盘 100% 满，`/tmp/` 下约 2GB 旧 SQL 备份文件导致无法启动 | 清理 `/tmp/` 旧文件释放 1.6GB |
+| 6 | **edits.py 语法错误** | `try:` 块缺少 `except`/`finally`，Python 语法错误导致后端无法启动 | 补全 `try/except` 块 |
+| 7 | **前端构建未更新** | `git reset --hard` 后只重启服务，没有 `npm run build` | 部署命令加入 `npm run build` |
+
+### 第二轮修复涉及的关键代码变更
+
+**`credit_service.py` — `atomic_deduct_credits`**：
+```python
+settle_ref = f"{reference_id}-settle" if reference_id else None
+# reserve 成功后 settle 使用 settle_ref
+# reserve 返回 409 时也用 settle_ref 尝试 settle
+# settle 也返回 409 时视为已处理成功（幂等）
+```
+
+**`translate.py` — 后台任务 settle/refund**：
+```python
+settle_ref = f"{reference_id}-settle" if reference_id else None
+refund_ref = f"{reference_id}-refund" if reference_id else None
+# settle_credits(..., reference_id=settle_ref, ...)
+# refund_credits(..., reference_id=refund_ref, ...)
+```
+
+**`translate.py` — Path A（已翻译未发布）**：
+```python
+# 检查用户是否已付费（Contribution 记录），免扣费直接发布
+existing = await db.execute(
+    select(Contribution).where(
+        Contribution.user_id == user.id,
+        Contribution.lecture_id == lecture_id,
+        Contribution.contribution_type == "translate",
+    )
+)
+if existing.scalar_one_or_none():
+    lecture.is_published = True
+    # ... 直接发布，不扣费
+```
+
+**`page.tsx` — 错误显示改进**：
+```typescript
+const [loadError, setLoadError] = useState<string | null>(null);
+// fetchParagraphs 加 .catch() 兜底
+// catch 块不再 router.push，改为 setLoadError
+// 显示错误信息和返回链接，而非自动跳转
+```
+
+### 冻结积分修复
+
+ooJerry@gmail.com 用户有 21 笔 Steiner Reader reserve 未 settle（翻译已完成但 settle 因 409 失败），共 210 积分被冻结。
+
+已在 auth-service 数据库（Oracle Frankfurt）中手动插入 settle 记录并更新用户余额：
+- credits: 5196.00 → 4986.00（扣除 21 笔翻译费用）
+- credits_reserved: 519.30 → 309.30（释放 Steiner Reader 冻结）
+
+剩余 309.30 冻结积分来自 Anki 应用（6 笔 `task:*` reserve），需 Anki 团队确认是否退还。
+
+### 数据库备份
+
+生产数据库已备份到 Oracle Frankfurt 开放环境：
+- 备份文件：`/tmp/steiner_reader_backup_20250531.sql.gz`（142 MB）
+- 目标服务器：ubuntu@89.168.93.94
+- 数据库：steiner_reader（19 表，316 本书，5367 讲座，415 MB）
 
 ---
 
@@ -161,10 +225,24 @@ Steiner Reader 是一个鲁道夫·施泰纳（Rudolf Steiner）德语著作的�
 - **可用积分**: `credits - credits_reserved`（前端统一显示此值）
 - Header、Profile、讲座页面均显示可用积分
 
+### reference_id 设计（重要）
+
+auth-service 的 `credit_logs` 表对 `reference_id` 有**全局唯一约束**（`UniqueConstraint("reference_id")`），这意味着 reserve、settle、refund 三个操作**不能**使用同一个 reference_id。
+
+**正确用法**：
+- reserve: `reference_id = "translate-lecture-6748-abc123"`
+- settle: `reference_id = "translate-lecture-6748-abc123-settle"`
+- refund: `reference_id = "translate-lecture-6748-abc123-refund"`
+
+**设计原理**：`reference_id` 是幂等键（防止重复提交），不是交易关联键。同一笔交易的不同阶段使用带后缀的 reference_id，既满足唯一性约束，又保留了可追溯性（通过前缀关联）。
+
+**auth-service 数据库位置**: Oracle Frankfurt (89.168.93.94)，数据库 `auth`，用户 `postgres`
+
 ### 已知问题
 - `/api/auth/verify` 不返回 `display_name`，后端需要 fallback 到 `/api/auth/me`
 - 前端 `fetchMe` 需要从 `role === 'admin'` 派生 `is_admin` 字段
 - localStorage key 从 `steiner_token` 迁移到 `access_token`，`steiner_user` 迁移到 `auth_user`
+- Anki 应用有 6 笔 reserve 未 settle/refund，ooJerry 用户 309.30 积分被冻结
 
 ---
 
@@ -242,29 +320,37 @@ scripts/
 
 3. **display_name 回填** — 已有贡献记录的 `display_name` 可能为空，需用 admin 凭证调用 auth-service API 回填。
 
+4. **生产服务器磁盘监控** — 20GB 磁盘使用率 92%，需定期清理 `/tmp/` 下的旧备份文件，或考虑扩容。
+
+5. **Anki 冻结积分处理** — ooJerry 用户有 309.30 积分被 Anki 应用冻结（6 笔 `task:*` reserve），需 Anki 团队确认是否退还。
+
 ### 🟡 中优先级
 
-4. **translation-cost 接口扩展** — 返回 `translation_published`/`download_cost`/`translated_in_database` 等字段，让前端能区分"已发布"和"翻译中"状态。
+6. **translation-cost 接口扩展** — 返回 `translation_published`/`download_cost`/`translated_in_database` 等字段，让前端能区分"已发布"和"翻译中"状态。
 
-5. **充值审核页面用户名查询性能** — 当前逐个用户查询 auth-service，当充值记录多时会很慢。建议批量查询或缓存。
+7. **充值审核页面用户名查询性能** — 当前逐个用户查询 auth-service，当充值记录多时会很慢。建议批量查询或缓存。
 
-6. **前端 is_running 状态展示** — 前端已使用 `is_running` 字段判断翻译状态，但 UI 上未区分"翻译中"和"翻译失败"状态，应增加失败重试按钮。
+8. **前端 is_running 状态展示** — 前端已使用 `is_running` 字段判断翻译状态，但 UI 上未区分"翻译中"和"翻译失败"状态，应增加失败重试按钮。
 
 ### 🟢 低优先级
 
-7. **清理临时文件** — 项目根目录有大量临时脚本和 `.bak` 文件，应添加到 `.gitignore` 或删除。
+9. **清理临时文件** — 项目根目录有大量临时脚本和 `.bak` 文件，应添加到 `.gitignore` 或删除。
 
-8. **贡献者显示优化** — 当多个用户贡献同一讲座时，应聚合显示。
+10. **贡献者显示优化** — 当多个用户贡献同一讲座时，应聚合显示。
 
-9. **PDF 中文字体回退** — `pdf_generator.py` 尝试加载 WenQuanYiMicroHei，如不存在则回退到 Windows 微软雅黑。生产服务器已确认有 WenQuanYiMicroHei。
+11. **PDF 中文字体回退** — `pdf_generator.py` 尝试加载 WenQuanYiMicroHei，如不存在则回退到 Windows 微软雅黑。生产服务器已确认有 WenQuanYiMicroHei。
 
 ---
 
 ## 八、Git 提交记录
 
-最近 5 次提交：
+最近提交：
 
 ```
+39f0e5a fix: 积分扣费409根因修复 - settle/refund使用不同reference_id避免与reserve冲突
+a988dcc fix: edits.py语法错误(try缺少except) + 投票扣费错误处理
+6e4475c fix: 积分扣费409处理 + 注册缺失路由(downloads/edits) + 前端错误显示改进
+63281c5 fix: 翻译积分扣费失败 - reference_id冲突 + 已付费用户重复扣费 + 错误信息改进
 164bcbd fix: 积分显示统一为可用积分(credits - credits_reserved)
 3107878 fix: 迁移脚本对齐生产表结构（book_id, first_contributor_user_id）
 e0d07f0 fix: 模型对齐生产数据库表结构

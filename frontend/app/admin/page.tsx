@@ -128,7 +128,7 @@ export default function AdminPage() {
     }
     try {
       const data = await adminAddCredits(userId, parseInt(addCreditsValue));
-      setSuccess(`已为 ${data.username} 添加 ${data.added} 点，当前总额: ${data.new_credits}`);
+      setSuccess(`已添加 ${data.amount} 点，当前总额: ${data.new_credits}`);
       setAddCreditsValue("");
       fetchUsers();
     } catch (err: any) {

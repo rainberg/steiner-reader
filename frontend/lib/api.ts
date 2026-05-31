@@ -498,7 +498,7 @@ export async function adminAddCredits(userId: string | number, amount: number, r
   const res = await authServiceFetch(`/api/admin/users/${userId}/add-credits`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ credits: amount, remark }),
+    body: JSON.stringify({ amount, remark }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: '充值失败' }));
