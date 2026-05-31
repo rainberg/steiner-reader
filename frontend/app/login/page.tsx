@@ -267,9 +267,9 @@ function SmsCodeInput({
             type="text"
             value={codeValue}
             onChange={e => onCodeChange(e.target.value)}
-            placeholder="6位验证码"
+            placeholder="4位验证码"
             required
-            maxLength={6}
+            maxLength={4}
             className={`flex-1 ${inputCls}`}
           />
           <button

@@ -8,7 +8,7 @@ Uses Auth Service for credits management:
 Uses database-backed job tracking (UserTranslationJob) instead of
 in-memory sets, so translation state survives server restarts.
 
-Pricing: cost = remaining_sentences * coefficient (admin-configurable).
+Pricing: cost = total_sentences * coefficient (admin-configurable).
 """
 
 import asyncio
@@ -144,14 +144,14 @@ async def translate_lecture(
             "total": total,
         }
 
-    cost = int(await compute_translation_cost(db, remaining))
+    cost = int(await compute_translation_cost(db, total))
 
     balance = await get_credits_balance(user.raw_token)
     available = float(balance.get("credits", 0)) - float(balance.get("credits_reserved", 0)) if balance and "error" not in balance else user.credits
     if available < cost:
         raise HTTPException(
             status_code=402,
-            detail=f"点数不足：翻译需要 {cost} 点（{remaining} 句 × 系数），当前可用 {available:.0f} 点"
+            detail=f"点数不足：翻译需要 {cost} 点（{total} 句 × 系数），当前可用 {available:.0f} 点"
         )
 
     ref_id = f"translate-lecture-{lecture_id}-{uuid.uuid4().hex[:8]}"
@@ -195,7 +195,7 @@ async def get_translation_cost(
     total, translated = await _get_sentence_counts(db, lecture_id)
     remaining = total - translated
 
-    cost = int(await compute_translation_cost(db, remaining)) if remaining > 0 else 0
+    cost = int(await compute_translation_cost(db, total)) if total > 0 else 0
 
     user_credits = None
     can_afford = None
