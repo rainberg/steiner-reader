@@ -29,7 +29,7 @@ AUTH_BASE = settings.AUTH_SERVICE_URL
 async def compute_price(db: AsyncSession, action: str, default: Decimal | None = None) -> Decimal:
     """Compute the credit price for *action* from the CreditSetting table.
 
-    Supported actions include e.g. ``translate_per_lecture``,
+    Supported actions include e.g. ``translate_per_sentence``,
     ``download_per_lecture``, etc.  When no row matches and *default* is
     provided, returns *default* instead of raising ``ValueError``.
     """
@@ -44,8 +44,19 @@ async def compute_price(db: AsyncSession, action: str, default: Decimal | None =
     return Decimal(str(setting.price))
 
 
+async def compute_translation_cost(db: AsyncSession, sentence_count: int) -> Decimal:
+    """Compute translation cost: sentence_count * coefficient.
+
+    Coefficient is read from CreditSetting ``translate_per_sentence``.
+    Falls back to 0.10 if not configured.
+    """
+    coefficient = await compute_price(db, "translate_per_sentence", Decimal("0.10"))
+    cost = Decimal(str(sentence_count)) * coefficient
+    return cost.quantize(Decimal("1"))
+
+
 DEFAULT_CREDIT_SETTINGS = [
-    {"action": "translate_per_lecture", "price": Decimal("10.00"), "description": "翻译单个讲座"},
+    {"action": "translate_per_sentence", "price": Decimal("0.10"), "description": "翻译每句单价（系数）"},
     {"action": "download_per_lecture", "price": Decimal("5.00"), "description": "下载单个讲座"},
 ]
 

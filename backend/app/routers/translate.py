@@ -7,11 +7,14 @@ Uses Auth Service for credits management:
 
 Uses database-backed job tracking (UserTranslationJob) instead of
 in-memory sets, so translation state survives server restarts.
+
+Pricing: cost = remaining_sentences * coefficient (admin-configurable).
 """
 
 import asyncio
 import logging
 import uuid
+from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy import select, func
@@ -27,7 +30,7 @@ from app.services.auth_client import (
     refund_credits,
     get_credits_balance,
 )
-from app.services.credit_service import add_contribution, atomic_deduct_credits, grant_access
+from app.services.credit_service import add_contribution, atomic_deduct_credits, grant_access, compute_translation_cost
 from app.services.translation_service import (
     is_lecture_running,
     start_translation_job,
@@ -43,21 +46,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["translation"])
 
-COST_PER_LECTURE = 10
 
-
-@router.post("/lectures/{lecture_id}/translate")
-async def translate_lecture(
-    lecture_id: int,
-    user: AuthUser = Depends(require_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Start translating a lecture (costs credits via auth-service, runs in background)."""
-    await detect_orphan_jobs(db)
-
-    if await is_lecture_running(db, lecture_id):
-        raise HTTPException(status_code=409, detail="该章节正在翻译中，请等待完成")
-
+async def _get_sentence_counts(db: AsyncSession, lecture_id: int) -> tuple[int, int]:
     total_result = await db.execute(
         select(func.count(Sentence.id))
         .select_from(Sentence)
@@ -73,6 +63,22 @@ async def translate_lecture(
         .where(Paragraph.lecture_id == lecture_id, Sentence.text_zh.isnot(None))
     )
     translated = translated_result.scalar() or 0
+    return total, translated
+
+
+@router.post("/lectures/{lecture_id}/translate")
+async def translate_lecture(
+    lecture_id: int,
+    user: AuthUser = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Start translating a lecture (costs credits via auth-service, runs in background)."""
+    await detect_orphan_jobs(db)
+
+    if await is_lecture_running(db, lecture_id):
+        raise HTTPException(status_code=409, detail="该章节正在翻译中，请等待完成")
+
+    total, translated = await _get_sentence_counts(db, lecture_id)
 
     lec_result = await db.execute(select(Lecture).where(Lecture.id == lecture_id))
     lecture = lec_result.scalar_one_or_none()
@@ -100,16 +106,17 @@ async def translate_lecture(
                     "total": total,
                 }
 
+            cost = int(await compute_translation_cost(db, total))
             balance = await get_credits_balance(user.raw_token)
             available = float(balance.get("credits", 0)) - float(balance.get("credits_reserved", 0)) if balance and "error" not in balance else user.credits
-            if available < COST_PER_LECTURE:
+            if available < cost:
                 raise HTTPException(
                     status_code=402,
-                    detail=f"点数不足：翻译需要 {COST_PER_LECTURE} 点，当前可用 {available:.0f} 点"
+                    detail=f"点数不足：翻译需要 {cost} 点，当前可用 {available:.0f} 点"
                 )
             ref_id = f"translate-lecture-{lecture_id}-{uuid.uuid4().hex[:8]}"
             deduct_result = await atomic_deduct_credits(
-                user.raw_token, COST_PER_LECTURE,
+                user.raw_token, cost,
                 reference_id=ref_id,
                 description=f"翻译讲座 {lecture_id}",
             )
@@ -124,7 +131,7 @@ async def translate_lecture(
                 access_type="translate",
                 display_name=user.display_name,
                 book_id=lecture.book_id,
-                cost=COST_PER_LECTURE,
+                cost=cost,
                 grants_download=True,
             )
             await grant_access(db, user.id, lecture_id, "download")
@@ -137,18 +144,20 @@ async def translate_lecture(
             "total": total,
         }
 
+    cost = int(await compute_translation_cost(db, remaining))
+
     balance = await get_credits_balance(user.raw_token)
     available = float(balance.get("credits", 0)) - float(balance.get("credits_reserved", 0)) if balance and "error" not in balance else user.credits
-    if available < COST_PER_LECTURE:
+    if available < cost:
         raise HTTPException(
             status_code=402,
-            detail=f"点数不足：翻译需要 {COST_PER_LECTURE} 点，当前可用 {available:.0f} 点"
+            detail=f"点数不足：翻译需要 {cost} 点（{remaining} 句 × 系数），当前可用 {available:.0f} 点"
         )
 
     ref_id = f"translate-lecture-{lecture_id}-{uuid.uuid4().hex[:8]}"
     reserve_result = await reserve_credits(
         user.raw_token,
-        amount=COST_PER_LECTURE,
+        amount=cost,
         reference_id=ref_id,
         description=f"翻译讲座 {lecture_id}",
     )
@@ -160,7 +169,7 @@ async def translate_lecture(
     await set_publication_status(db, lecture_id, book_id, "translating", user.id)
     await db.commit()
 
-    asyncio.create_task(_do_translate_lecture(lecture_id, book_id, user.raw_token, user.id, user.display_name, ref_id))
+    asyncio.create_task(_do_translate_lecture(lecture_id, book_id, user.raw_token, user.id, user.display_name, ref_id, cost))
 
     balance = await get_credits_balance(user.raw_token)
     new_credits = balance.get("credits", user.credits) if balance else user.credits
@@ -168,11 +177,11 @@ async def translate_lecture(
     return {
         "lecture_id": lecture_id,
         "status": "started",
-        "message": f"Translation started (预扣 {COST_PER_LECTURE} 点)",
+        "message": f"Translation started (预扣 {cost} 点)",
         "translated": translated,
         "total": total,
         "credits": new_credits,
-        "cost": COST_PER_LECTURE,
+        "cost": cost,
     }
 
 
@@ -183,21 +192,10 @@ async def get_translation_cost(
     db: AsyncSession = Depends(get_db),
 ):
     """Get the cost to translate a lecture."""
-    total_result = await db.execute(
-        select(func.count(Sentence.id))
-        .select_from(Sentence)
-        .join(Paragraph)
-        .where(Paragraph.lecture_id == lecture_id)
-    )
-    total = total_result.scalar() or 0
+    total, translated = await _get_sentence_counts(db, lecture_id)
+    remaining = total - translated
 
-    translated_result = await db.execute(
-        select(func.count(Sentence.id))
-        .select_from(Sentence)
-        .join(Paragraph)
-        .where(Paragraph.lecture_id == lecture_id, Sentence.text_zh.isnot(None))
-    )
-    translated = translated_result.scalar() or 0
+    cost = int(await compute_translation_cost(db, remaining)) if remaining > 0 else 0
 
     user_credits = None
     can_afford = None
@@ -205,14 +203,14 @@ async def get_translation_cost(
         balance = await get_credits_balance(user.raw_token)
         if balance and "error" not in balance:
             user_credits = float(balance.get("credits", 0)) - float(balance.get("credits_reserved", 0))
-            can_afford = user_credits >= COST_PER_LECTURE
+            can_afford = user_credits >= cost
 
     return {
         "lecture_id": lecture_id,
         "total": total,
         "translated": translated,
-        "remaining": total - translated,
-        "cost": COST_PER_LECTURE if total > translated else 0,
+        "remaining": remaining,
+        "cost": cost,
         "already_translated": total > 0 and translated == total,
         "user_credits": user_credits,
         "can_afford": can_afford,
@@ -225,21 +223,7 @@ async def lecture_translation_status(
     db: AsyncSession = Depends(get_db),
 ):
     """Get translation progress for a single lecture."""
-    total_result = await db.execute(
-        select(func.count(Sentence.id))
-        .select_from(Sentence)
-        .join(Paragraph)
-        .where(Paragraph.lecture_id == lecture_id)
-    )
-    total = total_result.scalar() or 0
-
-    translated_result = await db.execute(
-        select(func.count(Sentence.id))
-        .select_from(Sentence)
-        .join(Paragraph)
-        .where(Paragraph.lecture_id == lecture_id, Sentence.text_zh.isnot(None))
-    )
-    translated = translated_result.scalar() or 0
+    total, translated = await _get_sentence_counts(db, lecture_id)
 
     is_running = await is_lecture_running(db, lecture_id)
 
@@ -256,7 +240,7 @@ async def lecture_translation_status(
     )
 
 
-async def _do_translate_lecture(lecture_id: int, book_id: int, token: str, user_id: str, display_name: str, reference_id: str):
+async def _do_translate_lecture(lecture_id: int, book_id: int, token: str, user_id: str, display_name: str, reference_id: str, cost: int):
     success = False
 
     try:
@@ -324,7 +308,7 @@ async def _do_translate_lecture(lecture_id: int, book_id: int, token: str, user_
                     access_type="translate",
                     display_name=display_name,
                     book_id=lecture.book_id,
-                    cost=COST_PER_LECTURE,
+                    cost=cost,
                     grants_download=True,
                 )
                 await grant_access(db, user_id, lecture_id, "download")
@@ -356,8 +340,8 @@ async def _do_translate_lecture(lecture_id: int, book_id: int, token: str, user_
             if success:
                 settle_result = await settle_credits(
                     token,
-                    reserved_amount=COST_PER_LECTURE,
-                    actual_amount=COST_PER_LECTURE,
+                    reserved_amount=cost,
+                    actual_amount=cost,
                     reference_id=settle_ref,
                     description=f"翻译讲座 {lecture_id} 完成",
                 )
@@ -366,7 +350,7 @@ async def _do_translate_lecture(lecture_id: int, book_id: int, token: str, user_
             else:
                 refund_result = await refund_credits(
                     token,
-                    amount=COST_PER_LECTURE,
+                    amount=cost,
                     reference_id=refund_ref,
                     description=f"翻译讲座 {lecture_id} 失败，退还积分",
                 )
