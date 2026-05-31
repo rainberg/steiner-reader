@@ -349,12 +349,14 @@ async def _do_translate_lecture(lecture_id: int, book_id: int, token: str, user_
 
     finally:
         if token:
+            settle_ref = f"{reference_id}-settle" if reference_id else None
+            refund_ref = f"{reference_id}-refund" if reference_id else None
             if success:
                 settle_result = await settle_credits(
                     token,
                     reserved_amount=COST_PER_LECTURE,
                     actual_amount=COST_PER_LECTURE,
-                    reference_id=reference_id,
+                    reference_id=settle_ref,
                     description=f"翻译讲座 {lecture_id} 完成",
                 )
                 if not settle_result or "error" in settle_result:
@@ -363,7 +365,7 @@ async def _do_translate_lecture(lecture_id: int, book_id: int, token: str, user_
                 refund_result = await refund_credits(
                     token,
                     amount=COST_PER_LECTURE,
-                    reference_id=reference_id,
+                    reference_id=refund_ref,
                     description=f"翻译讲座 {lecture_id} 失败，退还积分",
                 )
                 if not refund_result or "error" in refund_result:

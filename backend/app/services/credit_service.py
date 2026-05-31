@@ -195,18 +195,20 @@ async def atomic_deduct_credits(
     settle fails, the reserved credits remain frozen (not lost) and can be
     settled or refunded later.
 
-    If reserve returns 409 (reference_id already exists), it means a previous
-    reserve/settle or reserve/refund already used this reference_id.  We try
-    to settle directly — if it was already settled, settle returns the same
-    result; if it was refunded, we re-reserve with a new reference_id.
+    NOTE: auth-service checks reference_id globally across ALL credit log
+    entries (reserve / settle / refund).  Therefore settle and refund must
+    use a *different* reference_id from reserve to avoid 409 conflicts.
+    We append ``-settle`` / ``-refund`` suffixes accordingly.
     """
+    settle_ref = f"{reference_id}-settle" if reference_id else None
+
     reserve_result = await reserve_credits(token, amount, reference_id, description)
     if "error" not in reserve_result:
         settle_result = await settle_credits(
             token,
             reserved_amount=amount,
             actual_amount=amount,
-            reference_id=reference_id,
+            reference_id=settle_ref,
             description=description,
         )
         if "error" in settle_result:
@@ -226,7 +228,7 @@ async def atomic_deduct_credits(
         token,
         reserved_amount=amount,
         actual_amount=amount,
-        reference_id=reference_id,
+        reference_id=settle_ref,
         description=description,
     )
     if "error" not in settle_result:

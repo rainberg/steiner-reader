@@ -1,6 +1,7 @@
 """Sentence editing with revision voting system."""
 
 import logging
+import uuid
 from fastapi import APIRouter, Depends, HTTPException
 import hashlib
 import re
@@ -54,7 +55,7 @@ async def submit_revision(
     try:
         deduct_result = await atomic_deduct_credits(
             user.raw_token, cost,
-            reference_id=f"edit-sentence-{sentence_id}",
+            reference_id=f"edit-sentence-{sentence_id}-{uuid.uuid4().hex[:8]}",
             description=f"修订句子 #{sentence_id}",
         )
     except Exception as e:
@@ -153,7 +154,7 @@ async def vote_revision(
     try:
         deduct_result = await atomic_deduct_credits(
             user.raw_token, cost,
-            reference_id=f"vote-revision-{revision_id}",
+            reference_id=f"vote-revision-{revision_id}-{uuid.uuid4().hex[:8]}",
             description=f"投票修订 #{revision_id}",
         )
     except Exception as e:

@@ -1,6 +1,7 @@
 """Download router — PDF download purchase and bilingual lecture delivery."""
 
 import logging
+import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 from sqlalchemy import select
@@ -45,7 +46,7 @@ async def purchase_download(
 
     deduct_result = await atomic_deduct_credits(
         user.raw_token, cost,
-        reference_id=f"download-lecture-{lecture_id}",
+        reference_id=f"download-lecture-{lecture_id}-{uuid.uuid4().hex[:8]}",
         description=f"购买讲座 PDF 下载权限: {lecture.title_de or lecture_id}",
     )
     if "error" in deduct_result:
