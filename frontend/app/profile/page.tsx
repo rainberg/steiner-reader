@@ -3,12 +3,27 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { clearAuth, fetchMe, getStoredUser, User, changePassword, changeEmail, changeUsername, fetchMyTransactions, CreditTransaction } from '@/lib/api';
+import {
+  clearAuth, fetchMe, getStoredUser, User,
+  changePassword, changeEmail, changeUsername,
+  fetchMyTransactions, CreditTransaction,
+  bindPhone, bindEmail, unbindPhone, unbindEmail, deleteAccount,
+} from '@/lib/api';
+
+type TabKey = 'info' | 'security' | 'credits' | 'account';
+
+const TABS: { key: TabKey; label: string }[] = [
+  { key: 'info', label: '个人信息' },
+  { key: 'security', label: '安全设置' },
+  { key: 'credits', label: '积分记录' },
+  { key: 'account', label: '账户' },
+];
 
 export default function ProfilePage() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<TabKey>('info');
 
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -29,8 +44,36 @@ export default function ProfilePage() {
   const [usernameError, setUsernameError] = useState('');
   const [usernameSuccess, setUsernameSuccess] = useState('');
 
+  const [bindPhoneNum, setBindPhoneNum] = useState('');
+  const [bindPhoneCode, setBindPhoneCode] = useState('');
+  const [bindPhonePw, setBindPhonePw] = useState('');
+  const [bindPhoneLoading, setBindPhoneLoading] = useState(false);
+  const [bindPhoneError, setBindPhoneError] = useState('');
+  const [bindPhoneSuccess, setBindPhoneSuccess] = useState('');
+
+  const [bindEmailAddr, setBindEmailAddr] = useState('');
+  const [bindEmailPw, setBindEmailPw] = useState('');
+  const [bindEmailLoading, setBindEmailLoading] = useState(false);
+  const [bindEmailError, setBindEmailError] = useState('');
+  const [bindEmailSuccess, setBindEmailSuccess] = useState('');
+
+  const [unbindPw, setUnbindPw] = useState('');
+  const [unbindLoading, setUnbindLoading] = useState(false);
+  const [unbindError, setUnbindError] = useState('');
+
+  const [deletePw, setDeletePw] = useState('');
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
   const [transactions, setTransactions] = useState<CreditTransaction[]>([]);
   const [txLoading, setTxLoading] = useState(false);
+
+  const refreshUser = async () => {
+    const u = await fetchMe();
+    setUser(u);
+    localStorage.setItem('auth_user', JSON.stringify(u));
+  };
 
   useEffect(() => {
     const stored = getStoredUser();
@@ -44,7 +87,6 @@ export default function ProfilePage() {
         setUser(u);
         localStorage.setItem('auth_user', JSON.stringify(u));
         setLoading(false);
-        // Fetch transaction history
         setTxLoading(true);
         fetchMyTransactions().then(data => {
           setTransactions(data.transactions || []);
@@ -76,68 +118,98 @@ export default function ProfilePage() {
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    setPwError('');
-    setPwSuccess('');
-    if (newPassword !== confirmPassword) {
-      setPwError('两次输入的新密码不一致');
-      return;
-    }
-    if (newPassword.length < 6) {
-      setPwError('新密码至少需要 6 个字符');
-      return;
-    }
+    setPwError(''); setPwSuccess('');
+    if (newPassword !== confirmPassword) { setPwError('两次输入的新密码不一致'); return; }
+    if (newPassword.length < 6) { setPwError('新密码至少需要 6 个字符'); return; }
     setPwLoading(true);
     try {
       await changePassword(oldPassword, newPassword);
       setPwSuccess('密码修改成功');
-      setOldPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
-    } catch (err: unknown) {
-      setPwError(err instanceof Error ? err.message : '修改密码失败');
-    } finally {
-      setPwLoading(false);
-    }
+      setOldPassword(''); setNewPassword(''); setConfirmPassword('');
+    } catch (err: unknown) { setPwError(err instanceof Error ? err.message : '修改密码失败'); }
+    finally { setPwLoading(false); }
   };
 
   const handleChangeEmail = async (e: React.FormEvent) => {
     e.preventDefault();
-    setEmailError('');
-    setEmailSuccess('');
+    setEmailError(''); setEmailSuccess('');
     setEmailLoading(true);
     try {
       await changeEmail(newEmail, emailPassword);
       setEmailSuccess('邮箱修改成功');
-      const u = await fetchMe();
-      setUser(u);
-      localStorage.setItem('auth_user', JSON.stringify(u));
-      setNewEmail('');
-      setEmailPassword('');
-    } catch (err: unknown) {
-      setEmailError(err instanceof Error ? err.message : '修改邮箱失败');
-    } finally {
-      setEmailLoading(false);
-    }
+      await refreshUser();
+      setNewEmail(''); setEmailPassword('');
+    } catch (err: unknown) { setEmailError(err instanceof Error ? err.message : '修改邮箱失败'); }
+    finally { setEmailLoading(false); }
   };
 
   const handleChangeUsername = async (e: React.FormEvent) => {
     e.preventDefault();
-    setUsernameError('');
-    setUsernameSuccess('');
+    setUsernameError(''); setUsernameSuccess('');
     setUsernameLoading(true);
     try {
-      const res = await changeUsername(newUsername, usernamePassword);
+      await changeUsername(newUsername, usernamePassword);
       setUsernameSuccess('用户名修改成功');
-      const u = await fetchMe();
-      setUser(u);
-      localStorage.setItem('auth_user', JSON.stringify(u));
-      setNewUsername('');
-      setUsernamePassword('');
-    } catch (err: unknown) {
-      setUsernameError(err instanceof Error ? err.message : '修改用户名失败');
-    } finally {
-      setUsernameLoading(false);
-    }
+      await refreshUser();
+      setNewUsername(''); setUsernamePassword('');
+    } catch (err: unknown) { setUsernameError(err instanceof Error ? err.message : '修改用户名失败'); }
+    finally { setUsernameLoading(false); }
+  };
+
+  const handleBindPhone = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBindPhoneError(''); setBindPhoneSuccess('');
+    setBindPhoneLoading(true);
+    try {
+      await bindPhone(bindPhoneNum, bindPhoneCode, bindPhonePw || undefined);
+      setBindPhoneSuccess('手机号绑定成功');
+      await refreshUser();
+      setBindPhoneNum(''); setBindPhoneCode(''); setBindPhonePw('');
+    } catch (err: unknown) { setBindPhoneError(err instanceof Error ? err.message : '绑定失败'); }
+    finally { setBindPhoneLoading(false); }
+  };
+
+  const handleBindEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBindEmailError(''); setBindEmailSuccess('');
+    setBindEmailLoading(true);
+    try {
+      await bindEmail(bindEmailAddr, bindEmailPw || undefined);
+      setBindEmailSuccess('邮箱绑定成功');
+      await refreshUser();
+      setBindEmailAddr(''); setBindEmailPw('');
+    } catch (err: unknown) { setBindEmailError(err instanceof Error ? err.message : '绑定失败'); }
+    finally { setBindEmailLoading(false); }
+  };
+
+  const handleUnbindPhone = async () => {
+    setUnbindError(''); setUnbindLoading(true);
+    try {
+      await unbindPhone(unbindPw || undefined);
+      await refreshUser();
+      setUnbindPw('');
+    } catch (err: unknown) { setUnbindError(err instanceof Error ? err.message : '解绑失败'); }
+    finally { setUnbindLoading(false); }
+  };
+
+  const handleUnbindEmail = async () => {
+    setUnbindError(''); setUnbindLoading(true);
+    try {
+      await unbindEmail(unbindPw || undefined);
+      await refreshUser();
+      setUnbindPw('');
+    } catch (err: unknown) { setUnbindError(err instanceof Error ? err.message : '解绑失败'); }
+    finally { setUnbindLoading(false); }
+  };
+
+  const handleDeleteAccount = async () => {
+    setDeleteError(''); setDeleteLoading(true);
+    try {
+      await deleteAccount(deletePw || undefined);
+      clearAuth();
+      router.push('/');
+    } catch (err: unknown) { setDeleteError(err instanceof Error ? err.message : '注销失败'); }
+    finally { setDeleteLoading(false); }
   };
 
   if (loading || !user) {
@@ -149,226 +221,290 @@ export default function ProfilePage() {
   }
 
   const inputClass = "w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-all";
+  const hasPhone = !!user.phone;
+  const hasEmail = !!user.email;
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-8">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-bold text-gray-900">个人中心</h1>
-        <Link href="/" className="text-sm text-indigo-500 hover:text-indigo-600">
-          返回首页
-        </Link>
+        <Link href="/" className="text-sm text-indigo-500 hover:text-indigo-600">返回首页</Link>
       </div>
 
-      {/* 用户信息卡片 */}
-      <div className="card p-8 mb-6">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">用户信息</h2>
-        <div className="space-y-3">
-          <div className="flex items-center justify-between py-2 border-b border-gray-100">
-            <span className="text-sm text-gray-500">用户名</span>
-            <span className="text-sm text-gray-800 font-medium">{user.display_name}</span>
+      <div className="flex gap-1 border-b border-gray-200 mb-6">
+        {TABS.map(t => (
+          <button key={t.key} type="button" onClick={() => setActiveTab(t.key)}
+            className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition ${
+              activeTab === t.key
+                ? 'bg-white text-indigo-600 border border-b-white border-gray-200 -mb-px'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >{t.label}</button>
+        ))}
+      </div>
+
+      {activeTab === 'info' && (
+        <div className="space-y-6">
+          <div className="card p-6">
+            <h2 className="text-base font-semibold text-gray-800 mb-4">基本信息</h2>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                <span className="text-sm text-gray-500">用户名</span>
+                <span className="text-sm text-gray-800 font-medium">{user.display_name}</span>
+              </div>
+              <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                <span className="text-sm text-gray-500">邮箱</span>
+                {hasEmail ? (
+                  <span className="text-sm text-gray-800">{user.email}</span>
+                ) : (
+                  <span className="text-xs text-gray-400 bg-gray-50 px-2 py-0.5 rounded">未绑定</span>
+                )}
+              </div>
+              <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                <span className="text-sm text-gray-500">手机号</span>
+                {hasPhone ? (
+                  <span className="text-sm text-gray-800">{user.phone}</span>
+                ) : (
+                  <span className="text-xs text-gray-400 bg-gray-50 px-2 py-0.5 rounded">未绑定</span>
+                )}
+              </div>
+              <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                <span className="text-sm text-gray-500">积分</span>
+                <span className="text-xs bg-amber-50 text-amber-700 border border-amber-200/60 px-2 py-0.5 rounded-full">
+                  {(user.credits - (user.credits_reserved ?? 0)).toFixed(0)} 点
+                  {(user.credits_reserved ?? 0) > 0 ? ` (冻结 ${user.credits_reserved?.toFixed(0) ?? 0})` : ''}
+                </span>
+              </div>
+              {user.created_at && (
+                <div className="flex items-center justify-between py-2">
+                  <span className="text-sm text-gray-500">注册时间</span>
+                  <span className="text-sm text-gray-800">{new Date(user.created_at).toLocaleDateString('zh-CN')}</span>
+                </div>
+              )}
+            </div>
           </div>
-          <div className="flex items-center justify-between py-2 border-b border-gray-100">
-            <span className="text-sm text-gray-500">邮箱</span>
-            <span className="text-sm text-gray-800">{user.email}</span>
+
+          <div className="card p-6">
+            <h2 className="text-base font-semibold text-gray-800 mb-4">修改用户名</h2>
+            {usernameError && <div className="bg-red-50/80 border border-red-100 text-red-600 text-sm px-3 py-2 rounded-lg mb-4">{usernameError}</div>}
+            {usernameSuccess && <div className="bg-green-50/80 border border-green-100 text-green-600 text-sm px-3 py-2 rounded-lg mb-4">{usernameSuccess}</div>}
+            <form onSubmit={handleChangeUsername} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1">新用户名</label>
+                <input type="text" value={newUsername} onChange={e => setNewUsername(e.target.value)} placeholder="输入新用户名 (2-50字符)" required className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1">确认密码</label>
+                <input type="password" value={usernamePassword} onChange={e => setUsernamePassword(e.target.value)} placeholder="输入当前密码以确认" required className={inputClass} />
+              </div>
+              <button type="submit" disabled={usernameLoading} className="btn-primary w-full">{usernameLoading ? '修改中...' : '修改用户名'}</button>
+            </form>
           </div>
-          <div className="flex items-center justify-between py-2 border-b border-gray-100">
-            <span className="text-sm text-gray-500">积分</span>
-            <span className="text-xs bg-amber-50 text-amber-700 border border-amber-200/60 px-2 py-0.5 rounded-full">{(user.credits - (user.credits_reserved ?? 0)).toFixed(0)} 点{(user.credits_reserved ?? 0) > 0 ? ` (冻结 ${user.credits_reserved?.toFixed(0) ?? 0})` : ''}</span>
+        </div>
+      )}
+
+      {activeTab === 'security' && (
+        <div className="space-y-6">
+          <div className="card p-6">
+            <h2 className="text-base font-semibold text-gray-800 mb-4">修改密码</h2>
+            {pwError && <div className="bg-red-50/80 border border-red-100 text-red-600 text-sm px-3 py-2 rounded-lg mb-4">{pwError}</div>}
+            {pwSuccess && <div className="bg-green-50/80 border border-green-100 text-green-600 text-sm px-3 py-2 rounded-lg mb-4">{pwSuccess}</div>}
+            <form onSubmit={handleChangePassword} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1">当前密码</label>
+                <input type="password" value={oldPassword} onChange={e => setOldPassword(e.target.value)} placeholder="输入当前密码" required className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1">新密码</label>
+                <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="至少 6 个字符" minLength={6} required className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1">确认新密码</label>
+                <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="再次输入新密码" required className={inputClass} />
+              </div>
+              <button type="submit" disabled={pwLoading} className="btn-primary w-full">{pwLoading ? '修改中...' : '修改密码'}</button>
+            </form>
           </div>
-          {user.created_at && (
-            <div className="flex items-center justify-between py-2">
-              <span className="text-sm text-gray-500">注册时间</span>
-              <span className="text-sm text-gray-800">{new Date(user.created_at).toLocaleDateString('zh-CN')}</span>
+
+          <div className="card p-6">
+            <h2 className="text-base font-semibold text-gray-800 mb-4">绑定管理</h2>
+            <p className="text-xs text-gray-400 mb-4">同一账号可同时绑定手机号和邮箱，支持两种方式登录。解绑后手机号/邮箱可绑定到其他账号。</p>
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between py-3 border-b border-gray-100">
+                <div>
+                  <span className="text-sm font-medium text-gray-700">手机号</span>
+                  {hasPhone ? (
+                    <span className="text-sm text-gray-500 ml-2">{user.phone}</span>
+                  ) : (
+                    <span className="text-xs text-gray-400 ml-2">未绑定</span>
+                  )}
+                </div>
+                {hasPhone ? (
+                  <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">已绑定</span>
+                ) : (
+                  <span className="text-xs text-gray-400 bg-gray-50 px-2 py-0.5 rounded">未绑定</span>
+                )}
+              </div>
+
+              {!hasPhone && (
+                <div className="bg-gray-50/50 rounded-lg p-4">
+                  <h3 className="text-sm font-medium text-gray-700 mb-3">绑定手机号</h3>
+                  {bindPhoneError && <div className="bg-red-50/80 border border-red-100 text-red-600 text-sm px-3 py-2 rounded-lg mb-3">{bindPhoneError}</div>}
+                  {bindPhoneSuccess && <div className="bg-green-50/80 border border-green-100 text-green-600 text-sm px-3 py-2 rounded-lg mb-3">{bindPhoneSuccess}</div>}
+                  <form onSubmit={handleBindPhone} className="space-y-3">
+                    <input type="tel" value={bindPhoneNum} onChange={e => setBindPhoneNum(e.target.value)} placeholder="手机号" pattern="1[3-9]\d{9}" required className={inputClass} />
+                    <input type="text" value={bindPhoneCode} onChange={e => setBindPhoneCode(e.target.value)} placeholder="4位验证码" maxLength={4} required className={inputClass} />
+                    <input type="password" value={bindPhonePw} onChange={e => setBindPhonePw(e.target.value)} placeholder="当前密码（如有）" className={inputClass} />
+                    <button type="submit" disabled={bindPhoneLoading} className="btn-primary w-full text-sm">{bindPhoneLoading ? '绑定中...' : '绑定手机号'}</button>
+                  </form>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between py-3 border-b border-gray-100">
+                <div>
+                  <span className="text-sm font-medium text-gray-700">邮箱</span>
+                  {hasEmail ? (
+                    <span className="text-sm text-gray-500 ml-2">{user.email}</span>
+                  ) : (
+                    <span className="text-xs text-gray-400 ml-2">未绑定</span>
+                  )}
+                </div>
+                {hasEmail ? (
+                  <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">已绑定</span>
+                ) : (
+                  <span className="text-xs text-gray-400 bg-gray-50 px-2 py-0.5 rounded">未绑定</span>
+                )}
+              </div>
+
+              {!hasEmail && (
+                <div className="bg-gray-50/50 rounded-lg p-4">
+                  <h3 className="text-sm font-medium text-gray-700 mb-3">绑定邮箱</h3>
+                  {bindEmailError && <div className="bg-red-50/80 border border-red-100 text-red-600 text-sm px-3 py-2 rounded-lg mb-3">{bindEmailError}</div>}
+                  {bindEmailSuccess && <div className="bg-green-50/80 border border-green-100 text-green-600 text-sm px-3 py-2 rounded-lg mb-3">{bindEmailSuccess}</div>}
+                  <form onSubmit={handleBindEmail} className="space-y-3">
+                    <input type="email" value={bindEmailAddr} onChange={e => setBindEmailAddr(e.target.value)} placeholder="邮箱地址" required className={inputClass} />
+                    <input type="password" value={bindEmailPw} onChange={e => setBindEmailPw(e.target.value)} placeholder="当前密码（如有）" className={inputClass} />
+                    <button type="submit" disabled={bindEmailLoading} className="btn-primary w-full text-sm">{bindEmailLoading ? '绑定中...' : '绑定邮箱'}</button>
+                  </form>
+                </div>
+              )}
+
+              {(hasPhone || hasEmail) && (
+                <div className="bg-gray-50/50 rounded-lg p-4 mt-4">
+                  <h3 className="text-sm font-medium text-gray-700 mb-3">解绑</h3>
+                  {unbindError && <div className="bg-red-50/80 border border-red-100 text-red-600 text-sm px-3 py-2 rounded-lg mb-3">{unbindError}</div>}
+                  <p className="text-xs text-gray-400 mb-3">解绑后，该手机号/邮箱可绑定到其他账号。至少保留一种登录方式。</p>
+                  <input type="password" value={unbindPw} onChange={e => setUnbindPw(e.target.value)} placeholder="当前密码（如有）" className={inputClass + " mb-3"} />
+                  <div className="flex gap-3">
+                    {hasPhone && (
+                      <button type="button" onClick={handleUnbindPhone} disabled={unbindLoading}
+                        className="flex-1 px-3 py-2 bg-orange-50 border border-orange-200 text-orange-600 rounded-lg text-sm font-medium hover:bg-orange-100 transition-colors disabled:opacity-50">
+                        {unbindLoading ? '解绑中...' : '解绑手机号'}
+                      </button>
+                    )}
+                    {hasEmail && (
+                      <button type="button" onClick={handleUnbindEmail} disabled={unbindLoading}
+                        className="flex-1 px-3 py-2 bg-orange-50 border border-orange-200 text-orange-600 rounded-lg text-sm font-medium hover:bg-orange-100 transition-colors disabled:opacity-50">
+                        {unbindLoading ? '解绑中...' : '解绑邮箱'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'credits' && (
+        <div className="card p-6">
+          <h2 className="text-base font-semibold text-gray-800 mb-4">积分记录</h2>
+          <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-100">
+            <span className="text-sm text-gray-500">当前积分</span>
+            <span className="text-sm font-semibold text-amber-700">{(user.credits - (user.credits_reserved ?? 0)).toFixed(0)} 点</span>
+            {(user.credits_reserved ?? 0) > 0 && (
+              <span className="text-xs text-gray-400">冻结 {user.credits_reserved?.toFixed(0)} 点</span>
+            )}
+          </div>
+          {txLoading ? (
+            <p className="text-sm text-gray-400">加载中...</p>
+          ) : transactions.length === 0 ? (
+            <p className="text-sm text-gray-400">暂无积分记录</p>
+          ) : (
+            <div className="space-y-0">
+              <div className="flex items-center justify-between py-2 text-xs text-gray-400 border-b border-gray-100">
+                <span className="flex-1">类型</span>
+                <span className="w-14 text-right">变动</span>
+                <span className="w-16 text-right">余额</span>
+                <span className="w-24 text-right">时间</span>
+              </div>
+              {transactions.slice(0, 50).map(tx => (
+                <div key={tx.id} className="flex items-center justify-between py-2.5 border-b border-gray-50 text-sm">
+                  <div className="flex-1">
+                    <span className="text-gray-700">{TX_LABELS[tx.transaction_type] || tx.transaction_type}</span>
+                    {tx.description && <span className="text-gray-400 text-xs ml-2">{tx.description}</span>}
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className={`w-14 text-right text-xs font-medium ${tx.amount > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                      {tx.amount > 0 ? `+${tx.amount}` : tx.amount}
+                    </span>
+                    <span className="text-gray-400 text-xs w-16 text-right">{tx.balance_after}</span>
+                    <span className="text-gray-300 text-xs w-24 text-right">
+                      {new Date(tx.created_at).toLocaleDateString('zh-CN')}
+                    </span>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
-      </div>
+      )}
 
-      {/* 修改密码 */}
-      <div className="card p-8 mb-6">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">修改密码</h2>
+      {activeTab === 'account' && (
+        <div className="space-y-6">
+          <div className="card p-6">
+            <h2 className="text-base font-semibold text-gray-800 mb-4">退出登录</h2>
+            <p className="text-sm text-gray-500 mb-4">退出登录后将清除本地登录状态。</p>
+            <button type="button" onClick={handleLogout}
+              className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-100 transition-colors">
+              退出登录
+            </button>
+          </div>
 
-        {pwError && (
-          <div className="bg-red-50/80 border border-red-100 text-red-600 text-sm px-3 py-2 rounded-lg mb-4">
-            {pwError}
-          </div>
-        )}
-        {pwSuccess && (
-          <div className="bg-green-50/80 border border-green-100 text-green-600 text-sm px-3 py-2 rounded-lg mb-4">
-            {pwSuccess}
-          </div>
-        )}
-
-        <form onSubmit={handleChangePassword} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">当前密码</label>
-            <input
-              type="password"
-              value={oldPassword}
-              onChange={e => setOldPassword(e.target.value)}
-              placeholder="输入当前密码"
-              required
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">新密码</label>
-            <input
-              type="password"
-              value={newPassword}
-              onChange={e => setNewPassword(e.target.value)}
-              placeholder="至少 6 个字符"
-              minLength={6}
-              required
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">确认新密码</label>
-            <input
-              type="password"
-              value={confirmPassword}
-              onChange={e => setConfirmPassword(e.target.value)}
-              placeholder="再次输入新密码"
-              required
-              className={inputClass}
-            />
-          </div>
-          <button type="submit" disabled={pwLoading} className="btn-primary w-full">
-            {pwLoading ? '修改中...' : '修改密码'}
-          </button>
-        </form>
-      </div>
-
-      {/* 修改用户名 */}
-      <div className="card p-8 mb-6">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">修改用户名</h2>
-
-        {usernameError && (
-          <div className="bg-red-50/80 border border-red-100 text-red-600 text-sm px-3 py-2 rounded-lg mb-4">
-            {usernameError}
-          </div>
-        )}
-        {usernameSuccess && (
-          <div className="bg-green-50/80 border border-green-100 text-green-600 text-sm px-3 py-2 rounded-lg mb-4">
-            {usernameSuccess}
-          </div>
-        )}
-
-        <form onSubmit={handleChangeUsername} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">新用户名</label>
-            <input
-              type="text"
-              value={newUsername}
-              onChange={e => setNewUsername(e.target.value)}
-              placeholder="输入新用户名 (2-50字符)"
-              required
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">确认密码</label>
-            <input
-              type="password"
-              value={usernamePassword}
-              onChange={e => setUsernamePassword(e.target.value)}
-              placeholder="输入当前密码以确认"
-              required
-              className={inputClass}
-            />
-          </div>
-          <button type="submit" disabled={usernameLoading} className="btn-primary w-full">
-            {usernameLoading ? '修改中...' : '修改用户名'}
-          </button>
-        </form>
-      </div>
-
-      {/* 修改邮箱 */}
-      <div className="card p-8 mb-6">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">修改邮箱</h2>
-
-        {emailError && (
-          <div className="bg-red-50/80 border border-red-100 text-red-600 text-sm px-3 py-2 rounded-lg mb-4">
-            {emailError}
-          </div>
-        )}
-        {emailSuccess && (
-          <div className="bg-green-50/80 border border-green-100 text-green-600 text-sm px-3 py-2 rounded-lg mb-4">
-            {emailSuccess}
-          </div>
-        )}
-
-        <form onSubmit={handleChangeEmail} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">新邮箱</label>
-            <input
-              type="email"
-              value={newEmail}
-              onChange={e => setNewEmail(e.target.value)}
-              placeholder="输入新邮箱地址"
-              required
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">确认密码</label>
-            <input
-              type="password"
-              value={emailPassword}
-              onChange={e => setEmailPassword(e.target.value)}
-              placeholder="输入当前密码以确认"
-              required
-              className={inputClass}
-            />
-          </div>
-          <button type="submit" disabled={emailLoading} className="btn-primary w-full">
-            {emailLoading ? '修改中...' : '修改邮箱'}
-          </button>
-        </form>
-      </div>
-
-      {/* 积分记录 */}
-      <div className="card p-8 mb-6">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">积分记录</h2>
-        {txLoading ? (
-          <p className="text-sm text-gray-400">加载中...</p>
-        ) : transactions.length === 0 ? (
-          <p className="text-sm text-gray-400">暂无积分记录</p>
-        ) : (
-          <div className="space-y-2 max-h-80 overflow-y-auto">
-            {transactions.slice(0, 50).map(tx => (
-              <div key={tx.id} className="flex items-center justify-between py-2 border-b border-gray-100 text-sm">
-                <div className="flex-1">
-                  <span className="text-gray-700">{TX_LABELS[tx.transaction_type] || tx.transaction_type}</span>
-                  {tx.description && <span className="text-gray-400 text-xs ml-2">{tx.description}</span>}
+          <div className="card p-6 border-red-100">
+            <h2 className="text-base font-semibold text-red-600 mb-2">注销账户</h2>
+            <p className="text-xs text-gray-400 mb-4">
+              注销后账户将被停用，手机号和邮箱将被释放（可绑定到其他账号）。此操作不可逆。
+            </p>
+            {deleteError && <div className="bg-red-50/80 border border-red-100 text-red-600 text-sm px-3 py-2 rounded-lg mb-4">{deleteError}</div>}
+            {!showDeleteConfirm ? (
+              <button type="button" onClick={() => setShowDeleteConfirm(true)}
+                className="w-full px-4 py-2.5 bg-red-50 border border-red-200 text-red-600 rounded-lg text-sm font-medium hover:bg-red-100 transition-colors">
+                申请注销账户
+              </button>
+            ) : (
+              <div className="space-y-3">
+                <div className="bg-red-50/50 border border-red-100 rounded-lg p-3">
+                  <p className="text-sm text-red-700 font-medium">确认注销账户？</p>
+                  <p className="text-xs text-red-500 mt-1">此操作不可逆，您的所有数据将被清除，手机号和邮箱将被释放。</p>
                 </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  <span className={tx.amount > 0 ? 'text-emerald-500 text-xs' : 'text-red-400 text-xs'}>
-                    {tx.amount > 0 ? `+${tx.amount}` : tx.amount}
-                  </span>
-                  <span className="text-gray-400 text-xs w-16 text-right">{tx.balance_after}</span>
-                  <span className="text-gray-300 text-xs w-24 text-right">
-                    {new Date(tx.created_at).toLocaleDateString('zh-CN')}
-                  </span>
+                <input type="password" value={deletePw} onChange={e => setDeletePw(e.target.value)} placeholder="当前密码（如有）" className={inputClass} />
+                <div className="flex gap-3">
+                  <button type="button" onClick={() => { setShowDeleteConfirm(false); setDeletePw(''); setDeleteError(''); }}
+                    className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-200 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-100 transition-colors">
+                    取消
+                  </button>
+                  <button type="button" onClick={handleDeleteAccount} disabled={deleteLoading}
+                    className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50">
+                    {deleteLoading ? '注销中...' : '确认注销'}
+                  </button>
                 </div>
               </div>
-            ))}
+            )}
           </div>
-        )}
-      </div>
-
-      {/* 退出登录 */}
-      <div className="card p-8">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">账户操作</h2>
-        <button
-          type="button"
-          onClick={handleLogout}
-          className="w-full px-4 py-2.5 bg-red-50 border border-red-200 text-red-600 rounded-lg text-sm font-medium hover:bg-red-100 transition-colors"
-        >
-          退出登录
-        </button>
-      </div>
+        </div>
+      )}
     </div>
   );
 }

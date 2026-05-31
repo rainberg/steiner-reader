@@ -451,6 +451,91 @@ export async function changeUsername(displayName: string, password?: string): Pr
   return updateUserProfile(displayName, password);
 }
 
+export async function bindPhone(phone: string, code: string, password?: string): Promise<User> {
+  const res = await authFetch('/api/auth/bind/phone', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone, code, password }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '绑定手机号失败' }));
+    throw new Error(err.detail || '绑定手机号失败');
+  }
+  const data = await res.json();
+  const stored = getStoredUser();
+  if (stored) {
+    const updated = { ...stored, phone: data.phone };
+    localStorage.setItem('auth_user', JSON.stringify(updated));
+  }
+  return data;
+}
+
+export async function bindEmail(email: string, password?: string): Promise<User> {
+  const res = await authFetch('/api/auth/bind/email', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '绑定邮箱失败' }));
+    throw new Error(err.detail || '绑定邮箱失败');
+  }
+  const data = await res.json();
+  const stored = getStoredUser();
+  if (stored) {
+    const updated = { ...stored, email: data.email };
+    localStorage.setItem('auth_user', JSON.stringify(updated));
+  }
+  return data;
+}
+
+export async function unbindPhone(password?: string): Promise<void> {
+  const res = await authFetch('/api/auth/unbind/phone', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '解绑手机号失败' }));
+    throw new Error(err.detail || '解绑手机号失败');
+  }
+  const stored = getStoredUser();
+  if (stored) {
+    const updated = { ...stored, phone: undefined };
+    localStorage.setItem('auth_user', JSON.stringify(updated));
+  }
+}
+
+export async function unbindEmail(password?: string): Promise<void> {
+  const res = await authFetch('/api/auth/unbind/email', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '解绑邮箱失败' }));
+    throw new Error(err.detail || '解绑邮箱失败');
+  }
+  const stored = getStoredUser();
+  if (stored) {
+    const updated = { ...stored, email: undefined };
+    localStorage.setItem('auth_user', JSON.stringify(updated));
+  }
+}
+
+export async function deleteAccount(password?: string): Promise<void> {
+  const res = await authFetch('/api/auth/delete-account', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '注销账户失败' }));
+    throw new Error(err.detail || '注销账户失败');
+  }
+  clearAuth();
+}
+
 export async function fetchMyTransactions(page: number = 1, pageSize: number = 20) {
   const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
   const res = await authServiceFetch(`/api/credits/logs?${params}`, { cache: 'no-store' });

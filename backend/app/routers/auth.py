@@ -15,6 +15,7 @@ from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel
 
 from app.config import settings
+from app.db.database import get_db as _get_db
 
 logger = logging.getLogger(__name__)
 
@@ -126,3 +127,70 @@ async def get_me(user: AuthUser = Depends(require_user)):
         "credits_reserved": float(info.get("credits_reserved", "0.00")),
         "is_active": info.get("is_active", user.is_active),
     }
+
+
+async def _proxy_auth_post(path: str, token: str, body: dict) -> dict:
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(
+            f"{settings.AUTH_SERVICE_URL}/api/auth{path}",
+            headers={"Authorization": f"Bearer {token}"},
+            json=body,
+        )
+        data = resp.json()
+        if resp.status_code >= 400:
+            raise HTTPException(status_code=resp.status_code, detail=data.get("detail", "操作失败"))
+        return data
+
+
+class BindPhoneBody(BaseModel):
+    phone: str
+    code: str
+    password: Optional[str] = None
+
+
+class BindEmailBody(BaseModel):
+    email: str
+    password: Optional[str] = None
+
+
+class UnbindBody(BaseModel):
+    password: Optional[str] = None
+
+
+class DeleteAccountBody(BaseModel):
+    password: Optional[str] = None
+
+
+@router.post("/bind/phone")
+async def bind_phone(body: BindPhoneBody, user: AuthUser = Depends(require_user)):
+    return await _proxy_auth_post("/bind/phone", user.raw_token, body.model_dump(exclude_none=True))
+
+
+@router.post("/bind/email")
+async def bind_email(body: BindEmailBody, user: AuthUser = Depends(require_user)):
+    return await _proxy_auth_post("/bind/email", user.raw_token, body.model_dump(exclude_none=True))
+
+
+@router.post("/unbind/phone")
+async def unbind_phone(body: UnbindBody, user: AuthUser = Depends(require_user)):
+    return await _proxy_auth_post("/unbind/phone", user.raw_token, body.model_dump(exclude_none=True))
+
+
+@router.post("/unbind/email")
+async def unbind_email(body: UnbindBody, user: AuthUser = Depends(require_user)):
+    return await _proxy_auth_post("/unbind/email", user.raw_token, body.model_dump(exclude_none=True))
+
+
+@router.post("/delete-account")
+async def delete_account(body: DeleteAccountBody, user: AuthUser = Depends(require_user), db=Depends(_get_db)):
+    result = await _proxy_auth_post("/delete-account", user.raw_token, body.model_dump(exclude_none=True))
+
+    from app.db.models import Contribution, LectureAccess, UserTranslationJob
+    from sqlalchemy import delete as sql_delete
+
+    await db.execute(sql_delete(Contribution).where(Contribution.user_id == user.id))
+    await db.execute(sql_delete(LectureAccess).where(LectureAccess.user_id == user.id))
+    await db.execute(sql_delete(UserTranslationJob).where(UserTranslationJob.user_id == user.id))
+    await db.commit()
+
+    return result
