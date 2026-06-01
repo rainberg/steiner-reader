@@ -420,7 +420,7 @@ export default function ProfilePage() {
                 {bindPhoneError && <div className="bg-red-50/80 border border-red-100 text-red-600 text-sm px-3 py-2 rounded-lg mb-3">{bindPhoneError}</div>}
                 {bindPhoneSuccess && <div className="bg-green-50/80 border border-green-100 text-green-600 text-sm px-3 py-2 rounded-lg mb-3">{bindPhoneSuccess}</div>}
                 <form onSubmit={handleBindPhone} className="space-y-3">
-                  <SliderCaptchaWidget key={bindCaptchaKey} onVerified={handleBindCaptchaVerified} />
+                  <SliderCaptchaWidget key={bindCaptchaKey} onVerified={handleBindCaptchaVerified} compact />
                   <SmsCodeInput
                     phoneValue={bindPhoneNum}
                     onPhoneChange={setBindPhoneNum}
@@ -430,6 +430,7 @@ export default function ProfilePage() {
                     captchaX={bindCaptchaX}
                     captchaVerified={bindCaptchaVerified}
                     onCodeSent={handleBindCodeSent}
+                    compact
                   />
                   <button type="submit" disabled={bindPhoneLoading} className="btn-primary w-full text-sm">{bindPhoneLoading ? '绑定中...' : '绑定手机号'}</button>
                 </form>
@@ -458,7 +459,7 @@ export default function ProfilePage() {
                 {bindEmailError && <div className="bg-red-50/80 border border-red-100 text-red-600 text-sm px-3 py-2 rounded-lg mb-3">{bindEmailError}</div>}
                 {bindEmailSuccess && <div className="bg-green-50/80 border border-green-100 text-green-600 text-sm px-3 py-2 rounded-lg mb-3">{bindEmailSuccess}</div>}
                 <form onSubmit={handleBindEmail} className="space-y-3">
-                  <SliderCaptchaWidget key={bindEmailCaptchaKey} onVerified={handleBindEmailCaptchaVerified} />
+                  <SliderCaptchaWidget key={bindEmailCaptchaKey} onVerified={handleBindEmailCaptchaVerified} compact />
                   <EmailCodeInput
                     emailValue={bindEmailAddr}
                     onEmailChange={setBindEmailAddr}
@@ -468,6 +469,7 @@ export default function ProfilePage() {
                     captchaX={bindEmailCaptchaX}
                     captchaVerified={bindEmailCaptchaVerified}
                     onCodeSent={handleBindEmailCodeSent}
+                    compact
                   />
                   <button type="submit" disabled={bindEmailLoading} className="btn-primary w-full text-sm">{bindEmailLoading ? '绑定中...' : '绑定邮箱'}</button>
                 </form>
@@ -573,7 +575,7 @@ export default function ProfilePage() {
                 </div>
                 {user?.email && (
                   <>
-                    <SliderCaptchaWidget key={deleteCaptchaKey} onVerified={handleDeleteCaptchaVerified} />
+                    <SliderCaptchaWidget key={deleteCaptchaKey} onVerified={handleDeleteCaptchaVerified} compact />
                     <div>
                       <label className="block text-sm font-medium text-gray-600 mb-1">邮箱验证码</label>
                       <div className="flex gap-2">

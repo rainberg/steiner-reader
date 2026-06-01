@@ -12,7 +12,7 @@ import {
 const inputCls =
   'w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-all';
 
-export function SliderCaptchaWidget({ onVerified }: { onVerified: (captchaId: string, captchaX: number) => void }) {
+export function SliderCaptchaWidget({ onVerified, compact }: { onVerified: (captchaId: string, captchaX: number) => void; compact?: boolean }) {
   const [captcha, setCaptcha] = useState<SliderCaptcha | null>(null);
   const [sliderX, setSliderX] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
@@ -125,7 +125,7 @@ export function SliderCaptchaWidget({ onVerified }: { onVerified: (captchaId: st
 
   if (verified) {
     return (
-      <div className="flex items-center gap-2 text-xs text-green-600 bg-green-50 px-3 py-1.5 rounded-lg">
+      <div className={`flex items-center gap-2 text-xs text-green-600 bg-green-50 px-3 py-1.5 rounded-lg ${compact ? 'text-[11px]' : ''}`}>
         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
         </svg>
@@ -136,17 +136,21 @@ export function SliderCaptchaWidget({ onVerified }: { onVerified: (captchaId: st
 
   const scaledY = captcha.y_position * imgScale;
   const scaledPW = captcha.puzzle_width * imgScale;
+  const trackH = compact ? 'h-7' : 'h-10';
+  const sliderH = compact ? 'h-6' : 'h-8';
+  const sliderIcon = compact ? 'w-3 h-3' : 'w-4 h-4';
+  const sliderTop = compact ? 'top-0.5' : 'top-1';
 
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-600 mb-1">滑块验证</label>
-      <div className="relative rounded-lg overflow-hidden border border-gray-200 bg-gray-100 select-none">
+      {!compact && <label className="block text-sm font-medium text-gray-600 mb-1">滑块验证</label>}
+      <div className={`relative rounded-lg overflow-hidden border border-gray-200 bg-gray-100 select-none ${compact ? 'max-w-[260px]' : ''}`}>
         <div className="relative">
           <img
             ref={bgRef}
             src={captcha.bg_image}
             alt=""
-            className="w-full h-auto block"
+            className={`w-full h-auto block ${compact ? 'max-h-[100px] object-cover' : ''}`}
             draggable={false}
           />
           <img
@@ -161,18 +165,18 @@ export function SliderCaptchaWidget({ onVerified }: { onVerified: (captchaId: st
             draggable={false}
           />
         </div>
-        <div ref={trackRef} className="relative h-10 bg-gray-200 border-t border-gray-300 cursor-pointer">
+        <div ref={trackRef} className={`relative ${trackH} bg-gray-200 border-t border-gray-300 cursor-pointer`}>
           <div
             className="absolute top-0 left-0 h-full bg-indigo-100 rounded-l-lg"
             style={{ width: sliderX + scaledPW }}
           />
           <div
-            className="absolute top-1 left-0 h-8 bg-white border border-gray-300 rounded-lg shadow-sm flex items-center justify-center text-gray-400"
+            className={`absolute ${sliderTop} left-0 ${sliderH} bg-white border border-gray-300 rounded-lg shadow-sm flex items-center justify-center text-gray-400`}
             style={{ transform: `translateX(${sliderX}px)`, width: scaledPW }}
             onMouseDown={handleDragStart}
             onTouchStart={handleDragStart}
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className={sliderIcon} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
             </svg>
           </div>
@@ -196,6 +200,7 @@ export function SmsCodeInput({
   captchaX,
   captchaVerified,
   onCodeSent,
+  compact,
 }: {
   phoneValue: string;
   onPhoneChange: (v: string) => void;
@@ -205,6 +210,7 @@ export function SmsCodeInput({
   captchaX: number;
   captchaVerified: boolean;
   onCodeSent?: () => void;
+  compact?: boolean;
 }) {
   const [countdown, setCountdown] = useState(0);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -239,10 +245,14 @@ export function SmsCodeInput({
     }
   };
 
+  const cls = compact
+    ? 'w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded-md text-xs text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-all'
+    : inputCls;
+
   return (
     <>
       <div>
-        <label className="block text-sm font-medium text-gray-600 mb-1">手机号</label>
+        {!compact && <label className="block text-sm font-medium text-gray-600 mb-1">手机号</label>}
         <input
           type="tel"
           value={phoneValue}
@@ -250,11 +260,11 @@ export function SmsCodeInput({
           placeholder="11位手机号"
           required
           maxLength={11}
-          className={inputCls}
+          className={cls}
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-600 mb-1">验证码</label>
+        {!compact && <label className="block text-sm font-medium text-gray-600 mb-1">验证码</label>}
         <div className="flex gap-2">
           <input
             type="text"
@@ -263,13 +273,13 @@ export function SmsCodeInput({
             placeholder="4位验证码"
             required
             maxLength={4}
-            className={`flex-1 ${inputCls}`}
+            className={`flex-1 ${cls}`}
           />
           <button
             type="button"
             onClick={handleSend}
             disabled={countdown > 0 || !captchaVerified || !phoneValue || sending}
-            className={`px-3 py-2.5 rounded-lg text-sm font-medium whitespace-nowrap transition ${
+            className={`${compact ? 'px-2.5 py-1.5 rounded-md text-xs' : 'px-3 py-2.5 rounded-lg text-sm'} font-medium whitespace-nowrap transition ${
               countdown > 0 || !captchaVerified || !phoneValue || sending
                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                 : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
@@ -292,6 +302,7 @@ export function EmailCodeInput({
   captchaX,
   captchaVerified,
   onCodeSent,
+  compact,
 }: {
   emailValue: string;
   onEmailChange: (v: string) => void;
@@ -301,6 +312,7 @@ export function EmailCodeInput({
   captchaX: number;
   captchaVerified: boolean;
   onCodeSent?: () => void;
+  compact?: boolean;
 }) {
   const [countdown, setCountdown] = useState(0);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -335,21 +347,25 @@ export function EmailCodeInput({
     }
   };
 
+  const cls = compact
+    ? 'w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded-md text-xs text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-all'
+    : inputCls;
+
   return (
     <>
       <div>
-        <label className="block text-sm font-medium text-gray-600 mb-1">邮箱</label>
+        {!compact && <label className="block text-sm font-medium text-gray-600 mb-1">邮箱</label>}
         <input
           type="email"
           value={emailValue}
           onChange={e => onEmailChange(e.target.value)}
           placeholder="输入邮箱地址"
           required
-          className={inputCls}
+          className={cls}
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-600 mb-1">验证码</label>
+        {!compact && <label className="block text-sm font-medium text-gray-600 mb-1">验证码</label>}
         <div className="flex gap-2">
           <input
             type="text"
@@ -358,13 +374,13 @@ export function EmailCodeInput({
             placeholder="6位验证码"
             required
             maxLength={6}
-            className={`flex-1 ${inputCls}`}
+            className={`flex-1 ${cls}`}
           />
           <button
             type="button"
             onClick={handleSend}
             disabled={countdown > 0 || !captchaVerified || !emailValue || sending}
-            className={`px-3 py-2.5 rounded-lg text-sm font-medium whitespace-nowrap transition ${
+            className={`${compact ? 'px-2.5 py-1.5 rounded-md text-xs' : 'px-3 py-2.5 rounded-lg text-sm'} font-medium whitespace-nowrap transition ${
               countdown > 0 || !captchaVerified || !emailValue || sending
                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                 : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
