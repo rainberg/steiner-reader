@@ -4,8 +4,8 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { fetchBookSummariesPaginated, BookSummary } from '@/lib/api';
 
-const FIRST_PAGE_SIZE = 10;
-const PAGE_SIZE = 24;
+const FIRST_PAGE_SIZE = 7;
+const PAGE_SIZE = 12;
 
 export default function WaterfallBooksView() {
   const [books, setBooks] = useState<BookSummary[]>([]);
