@@ -9,7 +9,7 @@ import {
   loginWithPhone,
   registerWithPhone,
 } from '@/lib/api';
-import { SliderCaptchaWidget, SmsCodeInput } from '@/app/components/SmsVerification';
+import { SliderCaptchaWidget, SmsCodeInput, EmailCodeInput } from '@/app/components/SmsVerification';
 
 type Tab = 'password' | 'sms' | 'register';
 type RegisterSub = 'email' | 'phone';
@@ -37,6 +37,10 @@ export default function LoginPage() {
   const [regEmailPwd, setRegEmailPwd] = useState('');
   const [regEmailConfirm, setRegEmailConfirm] = useState('');
   const [regDisplayName, setRegDisplayName] = useState('');
+  const [regEmailCode, setRegEmailCode] = useState('');
+  const [regEmailCaptchaId, setRegEmailCaptchaId] = useState('');
+  const [regEmailCaptchaX, setRegEmailCaptchaX] = useState(0);
+  const [regEmailCaptchaVerified, setRegEmailCaptchaVerified] = useState(false);
 
   const [regPhone, setRegPhone] = useState('');
   const [regPhoneCode, setRegPhoneCode] = useState('');
@@ -57,6 +61,12 @@ export default function LoginPage() {
     setRegCaptchaId(captchaId);
     setRegCaptchaX(captchaX);
     setRegCaptchaVerified(true);
+  }, []);
+
+  const handleRegEmailCaptchaVerified = useCallback((captchaId: string, captchaX: number) => {
+    setRegEmailCaptchaId(captchaId);
+    setRegEmailCaptchaX(captchaX);
+    setRegEmailCaptchaVerified(true);
   }, []);
 
   const handlePasswordLogin = async (e: React.FormEvent) => {
@@ -106,13 +116,21 @@ export default function LoginPage() {
   const handleEmailRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    if (!regEmailCode) {
+      setError('请输入邮箱验证码');
+      return;
+    }
+    if (!regEmailCaptchaVerified) {
+      setError('请先完成滑块验证');
+      return;
+    }
     if (regEmailPwd !== regEmailConfirm) {
       setError('两次输入的密码不一致');
       return;
     }
     setLoading(true);
     try {
-      await registerWithEmail(regEmail, regEmailPwd, regDisplayName || undefined);
+      await registerWithEmail(regEmail, regEmailPwd, regDisplayName || undefined, regEmailCode);
       window.dispatchEvent(new Event('auth-changed'));
       router.push('/');
       router.refresh();
@@ -224,6 +242,9 @@ export default function LoginPage() {
                   className={inputCls}
                 />
               </div>
+              <div className="flex justify-end">
+                <Link href="/forgot-password" className="text-xs text-indigo-500 hover:text-indigo-600">忘记密码？</Link>
+              </div>
               <button type="submit" disabled={loading} className="btn-primary w-full">
                 {loading ? '处理中...' : '登录'}
               </button>
@@ -274,17 +295,16 @@ export default function LoginPage() {
 
               {regSub === 'email' && (
                 <form onSubmit={handleEmailRegister} className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-600 mb-1">邮箱</label>
-                    <input
-                      type="email"
-                      value={regEmail}
-                      onChange={e => setRegEmail(e.target.value)}
-                      placeholder="输入邮箱地址"
-                      required
-                      className={inputCls}
-                    />
-                  </div>
+                  <SliderCaptchaWidget onVerified={handleRegEmailCaptchaVerified} />
+                  <EmailCodeInput
+                    emailValue={regEmail}
+                    onEmailChange={setRegEmail}
+                    codeValue={regEmailCode}
+                    onCodeChange={setRegEmailCode}
+                    captchaId={regEmailCaptchaId}
+                    captchaX={regEmailCaptchaX}
+                    captchaVerified={regEmailCaptchaVerified}
+                  />
                   <div>
                     <label className="block text-sm font-medium text-gray-600 mb-1">昵称（可选）</label>
                     <input

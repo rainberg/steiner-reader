@@ -304,6 +304,19 @@ export async function sendSmsCode(phone: string, captchaId: string, captchaX: nu
   return res.json();
 }
 
+export async function sendEmailCode(email: string, captchaId: string, captchaX: number): Promise<{ message: string }> {
+  const res = await fetch(`${AUTH_BASE}/api/auth/email/send`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, captcha_id: captchaId, captcha_x: captchaX }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '发送验证码失败' }));
+    throw new Error(err.detail || '发送验证码失败');
+  }
+  return res.json();
+}
+
 async function handleAuthResponse(res: Response): Promise<AuthResponse> {
   const data = await res.json();
   const authData: AuthResponse = {
@@ -321,11 +334,11 @@ async function throwAuthError(res: Response, fallbackMsg: string): Promise<never
   throw new Error(err.detail || fallbackMsg);
 }
 
-export async function register(email: string, password: string, displayName?: string): Promise<AuthResponse> {
+export async function register(email: string, password: string, displayName?: string, emailCode?: string): Promise<AuthResponse> {
   const res = await fetch(`${AUTH_BASE}/api/auth/register/email`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password, display_name: displayName, app: AUTH_APP }),
+    body: JSON.stringify({ email, password, display_name: displayName, app: AUTH_APP, email_code: emailCode }),
   });
   if (!res.ok) return throwAuthError(res, '注册失败');
   return handleAuthResponse(res);
@@ -470,11 +483,11 @@ export async function bindPhone(phone: string, code: string, password?: string):
   return data;
 }
 
-export async function bindEmail(email: string, password?: string): Promise<User> {
+export async function bindEmail(email: string, emailCode: string, password?: string): Promise<User> {
   const res = await authFetch('/api/auth/bind/email', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, email_code: emailCode, password }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: '绑定邮箱失败' }));
@@ -523,11 +536,23 @@ export async function unbindEmail(password?: string): Promise<void> {
   }
 }
 
-export async function deleteAccount(password?: string): Promise<void> {
+export async function resetPassword(email: string, emailCode: string, newPassword: string): Promise<void> {
+  const res = await fetch(`${AUTH_BASE}/api/auth/reset-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, email_code: emailCode, new_password: newPassword }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '重置密码失败' }));
+    throw new Error(err.detail || '重置密码失败');
+  }
+}
+
+export async function deleteAccount(params?: { password?: string; email_code?: string; phone_code?: string; phone?: string }): Promise<void> {
   const res = await authFetch('/api/auth/delete-account', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password }),
+    body: JSON.stringify(params || {}),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: '注销账户失败' }));
@@ -933,8 +958,9 @@ export async function registerWithEmail(
   email: string,
   password: string,
   displayName?: string,
+  emailCode?: string,
 ): Promise<AuthResponse> {
-  return register(email, password, displayName);
+  return register(email, password, displayName, emailCode);
 }
 
 export async function registerWithPhone(

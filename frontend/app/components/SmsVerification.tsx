@@ -5,6 +5,7 @@ import {
   generateSliderCaptcha,
   verifySliderCaptcha,
   sendSmsCode,
+  sendEmailCode,
   SliderCaptcha,
 } from '@/lib/api';
 
@@ -267,6 +268,98 @@ export function SmsCodeInput({
             disabled={countdown > 0 || !captchaVerified || !phoneValue || sending}
             className={`px-3 py-2.5 rounded-lg text-sm font-medium whitespace-nowrap transition ${
               countdown > 0 || !captchaVerified || !phoneValue || sending
+                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
+            }`}
+          >
+            {countdown > 0 ? `${countdown}s` : '获取验证码'}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+export function EmailCodeInput({
+  emailValue,
+  onEmailChange,
+  codeValue,
+  onCodeChange,
+  captchaId,
+  captchaX,
+  captchaVerified,
+}: {
+  emailValue: string;
+  onEmailChange: (v: string) => void;
+  codeValue: string;
+  onCodeChange: (v: string) => void;
+  captchaId: string;
+  captchaX: number;
+  captchaVerified: boolean;
+}) {
+  const [countdown, setCountdown] = useState(0);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [sending, setSending] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      if (countdownRef.current) clearInterval(countdownRef.current);
+    };
+  }, []);
+
+  const handleSend = async () => {
+    if (countdown > 0 || !captchaVerified || !emailValue) return;
+    if (!emailValue.includes('@')) return;
+    setSending(true);
+    try {
+      await sendEmailCode(emailValue, captchaId, captchaX);
+      setCountdown(60);
+      countdownRef.current = setInterval(() => {
+        setCountdown(prev => {
+          if (prev <= 1) {
+            if (countdownRef.current) clearInterval(countdownRef.current);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } catch {
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <>
+      <div>
+        <label className="block text-sm font-medium text-gray-600 mb-1">邮箱</label>
+        <input
+          type="email"
+          value={emailValue}
+          onChange={e => onEmailChange(e.target.value)}
+          placeholder="输入邮箱地址"
+          required
+          className={inputCls}
+        />
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-600 mb-1">验证码</label>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={codeValue}
+            onChange={e => onCodeChange(e.target.value)}
+            placeholder="6位验证码"
+            required
+            maxLength={6}
+            className={`flex-1 ${inputCls}`}
+          />
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={countdown > 0 || !captchaVerified || !emailValue || sending}
+            className={`px-3 py-2.5 rounded-lg text-sm font-medium whitespace-nowrap transition ${
+              countdown > 0 || !captchaVerified || !emailValue || sending
                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                 : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
             }`}
