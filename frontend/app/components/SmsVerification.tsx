@@ -195,6 +195,7 @@ export function SmsCodeInput({
   captchaId,
   captchaX,
   captchaVerified,
+  onCodeSent,
 }: {
   phoneValue: string;
   onPhoneChange: (v: string) => void;
@@ -203,6 +204,7 @@ export function SmsCodeInput({
   captchaId: string;
   captchaX: number;
   captchaVerified: boolean;
+  onCodeSent?: () => void;
 }) {
   const [countdown, setCountdown] = useState(0);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -230,6 +232,7 @@ export function SmsCodeInput({
           return prev - 1;
         });
       }, 1000);
+      onCodeSent?.();
     } catch {
     } finally {
       setSending(false);
@@ -288,6 +291,7 @@ export function EmailCodeInput({
   captchaId,
   captchaX,
   captchaVerified,
+  onCodeSent,
 }: {
   emailValue: string;
   onEmailChange: (v: string) => void;
@@ -296,6 +300,7 @@ export function EmailCodeInput({
   captchaId: string;
   captchaX: number;
   captchaVerified: boolean;
+  onCodeSent?: () => void;
 }) {
   const [countdown, setCountdown] = useState(0);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -323,6 +328,7 @@ export function EmailCodeInput({
           return prev - 1;
         });
       }, 1000);
+      onCodeSent?.();
     } catch {
     } finally {
       setSending(false);

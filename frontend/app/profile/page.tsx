@@ -55,12 +55,14 @@ export default function ProfilePage() {
   const [bindCaptchaId, setBindCaptchaId] = useState('');
   const [bindCaptchaX, setBindCaptchaX] = useState(0);
   const [bindCaptchaVerified, setBindCaptchaVerified] = useState(false);
+  const [bindCaptchaKey, setBindCaptchaKey] = useState(0);
 
   const [bindEmailAddr, setBindEmailAddr] = useState('');
   const [bindEmailCode, setBindEmailCode] = useState('');
   const [bindEmailCaptchaId, setBindEmailCaptchaId] = useState('');
   const [bindEmailCaptchaX, setBindEmailCaptchaX] = useState(0);
   const [bindEmailCaptchaVerified, setBindEmailCaptchaVerified] = useState(false);
+  const [bindEmailCaptchaKey, setBindEmailCaptchaKey] = useState(0);
   const [bindEmailLoading, setBindEmailLoading] = useState(false);
   const [bindEmailError, setBindEmailError] = useState('');
   const [bindEmailSuccess, setBindEmailSuccess] = useState('');
@@ -73,6 +75,7 @@ export default function ProfilePage() {
   const [deleteCaptchaId, setDeleteCaptchaId] = useState('');
   const [deleteCaptchaX, setDeleteCaptchaX] = useState(0);
   const [deleteCaptchaVerified, setDeleteCaptchaVerified] = useState(false);
+  const [deleteCaptchaKey, setDeleteCaptchaKey] = useState(0);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -173,16 +176,31 @@ export default function ProfilePage() {
     setBindCaptchaVerified(true);
   }, []);
 
+  const handleBindCodeSent = useCallback(() => {
+    setBindCaptchaVerified(false);
+    setBindCaptchaKey(k => k + 1);
+  }, []);
+
   const handleBindEmailCaptchaVerified = useCallback((captchaId: string, captchaX: number) => {
     setBindEmailCaptchaId(captchaId);
     setBindEmailCaptchaX(captchaX);
     setBindEmailCaptchaVerified(true);
   }, []);
 
+  const handleBindEmailCodeSent = useCallback(() => {
+    setBindEmailCaptchaVerified(false);
+    setBindEmailCaptchaKey(k => k + 1);
+  }, []);
+
   const handleDeleteCaptchaVerified = useCallback((captchaId: string, captchaX: number) => {
     setDeleteCaptchaId(captchaId);
     setDeleteCaptchaX(captchaX);
     setDeleteCaptchaVerified(true);
+  }, []);
+
+  const handleDeleteCodeSent = useCallback(() => {
+    setDeleteCaptchaVerified(false);
+    setDeleteCaptchaKey(k => k + 1);
   }, []);
 
   const handleBindPhone = async (e: React.FormEvent) => {
@@ -402,7 +420,7 @@ export default function ProfilePage() {
                 {bindPhoneError && <div className="bg-red-50/80 border border-red-100 text-red-600 text-sm px-3 py-2 rounded-lg mb-3">{bindPhoneError}</div>}
                 {bindPhoneSuccess && <div className="bg-green-50/80 border border-green-100 text-green-600 text-sm px-3 py-2 rounded-lg mb-3">{bindPhoneSuccess}</div>}
                 <form onSubmit={handleBindPhone} className="space-y-3">
-                  <SliderCaptchaWidget onVerified={handleBindCaptchaVerified} />
+                  <SliderCaptchaWidget key={bindCaptchaKey} onVerified={handleBindCaptchaVerified} />
                   <SmsCodeInput
                     phoneValue={bindPhoneNum}
                     onPhoneChange={setBindPhoneNum}
@@ -411,6 +429,7 @@ export default function ProfilePage() {
                     captchaId={bindCaptchaId}
                     captchaX={bindCaptchaX}
                     captchaVerified={bindCaptchaVerified}
+                    onCodeSent={handleBindCodeSent}
                   />
                   <button type="submit" disabled={bindPhoneLoading} className="btn-primary w-full text-sm">{bindPhoneLoading ? '绑定中...' : '绑定手机号'}</button>
                 </form>
@@ -439,7 +458,7 @@ export default function ProfilePage() {
                 {bindEmailError && <div className="bg-red-50/80 border border-red-100 text-red-600 text-sm px-3 py-2 rounded-lg mb-3">{bindEmailError}</div>}
                 {bindEmailSuccess && <div className="bg-green-50/80 border border-green-100 text-green-600 text-sm px-3 py-2 rounded-lg mb-3">{bindEmailSuccess}</div>}
                 <form onSubmit={handleBindEmail} className="space-y-3">
-                  <SliderCaptchaWidget onVerified={handleBindEmailCaptchaVerified} />
+                  <SliderCaptchaWidget key={bindEmailCaptchaKey} onVerified={handleBindEmailCaptchaVerified} />
                   <EmailCodeInput
                     emailValue={bindEmailAddr}
                     onEmailChange={setBindEmailAddr}
@@ -448,6 +467,7 @@ export default function ProfilePage() {
                     captchaId={bindEmailCaptchaId}
                     captchaX={bindEmailCaptchaX}
                     captchaVerified={bindEmailCaptchaVerified}
+                    onCodeSent={handleBindEmailCodeSent}
                   />
                   <button type="submit" disabled={bindEmailLoading} className="btn-primary w-full text-sm">{bindEmailLoading ? '绑定中...' : '绑定邮箱'}</button>
                 </form>
@@ -553,14 +573,14 @@ export default function ProfilePage() {
                 </div>
                 {user?.email && (
                   <>
-                    <SliderCaptchaWidget onVerified={handleDeleteCaptchaVerified} />
+                    <SliderCaptchaWidget key={deleteCaptchaKey} onVerified={handleDeleteCaptchaVerified} />
                     <div>
                       <label className="block text-sm font-medium text-gray-600 mb-1">邮箱验证码</label>
                       <div className="flex gap-2">
                         <input type="text" value={deleteEmailCode} onChange={e => setDeleteEmailCode(e.target.value)} placeholder="6位验证码" maxLength={6} className={inputClass} />
                         <button type="button" onClick={async () => {
                           if (!deleteCaptchaVerified || !user.email) return;
-                          try { await sendEmailCode(user.email, deleteCaptchaId, deleteCaptchaX); } catch (err: unknown) { setDeleteError(err instanceof Error ? err.message : '发送失败'); }
+                          try { await sendEmailCode(user.email, deleteCaptchaId, deleteCaptchaX); handleDeleteCodeSent(); } catch (err: unknown) { setDeleteError(err instanceof Error ? err.message : '发送失败'); }
                         }} disabled={!deleteCaptchaVerified || !user.email}
                           className={`px-3 py-2.5 rounded-lg text-sm font-medium whitespace-nowrap transition ${!deleteCaptchaVerified ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}>
                           获取验证码

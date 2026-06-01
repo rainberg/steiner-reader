@@ -18,6 +18,7 @@ export default function ForgotPasswordPage() {
   const [captchaId, setCaptchaId] = useState('');
   const [captchaX, setCaptchaX] = useState(0);
   const [captchaVerified, setCaptchaVerified] = useState(false);
+  const [captchaKey, setCaptchaKey] = useState(0);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
@@ -26,6 +27,11 @@ export default function ForgotPasswordPage() {
     setCaptchaId(captchaId);
     setCaptchaX(captchaX);
     setCaptchaVerified(true);
+  }, []);
+
+  const handleCodeSent = useCallback(() => {
+    setCaptchaVerified(false);
+    setCaptchaKey(k => k + 1);
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -81,7 +87,7 @@ export default function ForgotPasswordPage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            <SliderCaptchaWidget onVerified={handleCaptchaVerified} />
+            <SliderCaptchaWidget key={captchaKey} onVerified={handleCaptchaVerified} />
             <EmailCodeInput
               emailValue={email}
               onEmailChange={setEmail}
@@ -90,6 +96,7 @@ export default function ForgotPasswordPage() {
               captchaId={captchaId}
               captchaX={captchaX}
               captchaVerified={captchaVerified}
+              onCodeSent={handleCodeSent}
             />
             <div>
               <label className="block text-sm font-medium text-gray-600 mb-1">新密码</label>
