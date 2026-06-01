@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     # App
     APP_NAME: str = "Steiner Reader"
     DEBUG: bool = False
+    CORS_ORIGINS: str = "https://steiner.3mudi.com"
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
