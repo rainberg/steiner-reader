@@ -191,35 +191,248 @@ export function SliderCaptchaWidget({ onVerified, compact }: { onVerified: (capt
   );
 }
 
+function CaptchaPopup({
+  visible,
+  onVerified,
+  onClose,
+}: {
+  visible: boolean;
+  onVerified: (captchaId: string, captchaX: number) => void;
+  onClose: () => void;
+}) {
+  const [captcha, setCaptcha] = useState<SliderCaptcha | null>(null);
+  const [sliderX, setSliderX] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [verified, setVerified] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [imgScale, setImgScale] = useState(1);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const bgRef = useRef<HTMLImageElement>(null);
+  const startXRef = useRef(0);
+  const startSliderXRef = useRef(0);
+  const popupRef = useRef<HTMLDivElement>(null);
+
+  const loadCaptcha = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await generateSliderCaptcha();
+      setCaptcha(data);
+      setSliderX(0);
+      setVerified(false);
+      setImgScale(1);
+    } catch {
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (visible) loadCaptcha();
+  }, [visible, loadCaptcha]);
+
+  const updateScale = useCallback(() => {
+    if (bgRef.current && bgRef.current.naturalWidth > 0) {
+      setImgScale(bgRef.current.clientWidth / bgRef.current.naturalWidth);
+    }
+  }, []);
+
+  useEffect(() => {
+    const img = bgRef.current;
+    if (!img) return;
+    const onLoad = () => updateScale();
+    if (img.complete) onLoad();
+    else img.addEventListener('load', onLoad);
+    const observer = new ResizeObserver(() => updateScale());
+    observer.observe(img);
+    return () => {
+      img.removeEventListener('load', onLoad);
+      observer.disconnect();
+    };
+  }, [captcha, updateScale]);
+
+  useEffect(() => {
+    if (verified && captcha) {
+      onVerified(captcha.captcha_id, Math.round(sliderX / imgScale));
+      const t = setTimeout(onClose, 500);
+      return () => clearTimeout(t);
+    }
+  }, [verified, captcha, sliderX, imgScale, onVerified, onClose]);
+
+  const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
+    if (verified) return;
+    setIsDragging(true);
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    startXRef.current = clientX;
+    startSliderXRef.current = sliderX;
+  };
+
+  const handleDragMove = useCallback(
+    (e: MouseEvent | TouchEvent) => {
+      if (!isDragging || !captcha) return;
+      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+      const delta = clientX - startXRef.current;
+      const scaledPW = captcha.puzzle_width * imgScale;
+      const maxX = trackRef.current ? trackRef.current.offsetWidth - scaledPW : 260;
+      const newX = Math.max(0, Math.min(maxX, startSliderXRef.current + delta));
+      setSliderX(newX);
+    },
+    [isDragging, captcha, imgScale]
+  );
+
+  const handleDragEnd = useCallback(async () => {
+    if (!isDragging || !captcha) return;
+    setIsDragging(false);
+    try {
+      const originalX = Math.round(sliderX / imgScale);
+      const result = await verifySliderCaptcha(captcha.captcha_id, originalX);
+      if (result.success) {
+        setVerified(true);
+      } else {
+        setVerified(false);
+        await loadCaptcha();
+      }
+    } catch {
+      setVerified(false);
+      await loadCaptcha();
+    }
+  }, [isDragging, captcha, sliderX, imgScale, loadCaptcha]);
+
+  useEffect(() => {
+    if (!isDragging) return;
+    window.addEventListener('mousemove', handleDragMove);
+    window.addEventListener('mouseup', handleDragEnd);
+    window.addEventListener('touchmove', handleDragMove);
+    window.addEventListener('touchend', handleDragEnd);
+    return () => {
+      window.removeEventListener('mousemove', handleDragMove);
+      window.removeEventListener('mouseup', handleDragEnd);
+      window.removeEventListener('touchmove', handleDragMove);
+      window.removeEventListener('touchend', handleDragEnd);
+    };
+  }, [isDragging, handleDragMove, handleDragEnd]);
+
+  if (!visible) return null;
+
+  const scaledY = captcha ? captcha.y_position * imgScale : 0;
+  const scaledPW = captcha ? captcha.puzzle_width * imgScale : 0;
+
+  return (
+    <div
+      ref={popupRef}
+      className="absolute z-50 left-0 mt-1.5 bg-white rounded-lg shadow-xl border border-gray-200 p-2.5 w-[280px]"
+    >
+      {loading && (
+        <div className="text-center text-xs text-gray-400 py-6">加载中...</div>
+      )}
+      {captcha && !verified && (
+        <div className="relative rounded-lg overflow-hidden border border-gray-200 bg-gray-100 select-none">
+          <div className="relative">
+            <img
+              ref={bgRef}
+              src={captcha.bg_image}
+              alt=""
+              className="w-full h-auto block max-h-[100px] object-cover"
+              draggable={false}
+            />
+            <img
+              src={captcha.slider_image}
+              alt=""
+              className="absolute top-0 left-0"
+              style={{
+                transform: `translateX(${sliderX}px) translateY(${scaledY}px)`,
+                width: scaledPW,
+                height: scaledPW,
+              }}
+              draggable={false}
+            />
+          </div>
+          <div ref={trackRef} className="relative h-7 bg-gray-200 border-t border-gray-300 cursor-pointer">
+            <div
+              className="absolute top-0 left-0 h-full bg-indigo-100 rounded-l-lg"
+              style={{ width: sliderX + scaledPW }}
+            />
+            <div
+              className="absolute top-0.5 left-0 h-6 bg-white border border-gray-300 rounded-lg shadow-sm flex items-center justify-center text-gray-400"
+              style={{ transform: `translateX(${sliderX}px)`, width: scaledPW }}
+              onMouseDown={handleDragStart}
+              onTouchStart={handleDragStart}
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
+              </svg>
+            </div>
+            {!isDragging && sliderX === 0 && (
+              <div className="absolute inset-0 flex items-center justify-center text-[10px] text-gray-400 pointer-events-none">
+                拖动滑块完成验证
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      {verified && (
+        <div className="flex items-center justify-center gap-1.5 text-xs text-green-600 py-3">
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          验证通过
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function SmsCodeInput({
   phoneValue,
   onPhoneChange,
   codeValue,
   onCodeChange,
-  captchaId,
-  captchaX,
-  captchaVerified,
-  onCodeSent,
   compact,
 }: {
   phoneValue: string;
   onPhoneChange: (v: string) => void;
   codeValue: string;
   onCodeChange: (v: string) => void;
-  captchaId: string;
-  captchaX: number;
-  captchaVerified: boolean;
-  onCodeSent?: () => void;
   compact?: boolean;
 }) {
+  const [captchaVerified, setCaptchaVerified] = useState(false);
+  const [captchaId, setCaptchaId] = useState('');
+  const [captchaX, setCaptchaX] = useState(0);
+  const [showCaptcha, setShowCaptcha] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [sending, setSending] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     return () => {
       if (countdownRef.current) clearInterval(countdownRef.current);
     };
+  }, []);
+
+  useEffect(() => {
+    if (!showCaptcha) return;
+    const handleClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setShowCaptcha(false);
+      }
+    };
+    const timer = setTimeout(() => {
+      document.addEventListener('mousedown', handleClick);
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('mousedown', handleClick);
+    };
+  }, [showCaptcha]);
+
+  const handleCaptchaVerified = useCallback((id: string, x: number) => {
+    setCaptchaId(id);
+    setCaptchaX(x);
+    setCaptchaVerified(true);
+  }, []);
+
+  const handleCloseCaptcha = useCallback(() => {
+    setShowCaptcha(false);
   }, []);
 
   const handleSend = async () => {
@@ -238,7 +451,9 @@ export function SmsCodeInput({
           return prev - 1;
         });
       }, 1000);
-      onCodeSent?.();
+      setCaptchaVerified(false);
+      setCaptchaId('');
+      setCaptchaX(0);
     } catch {
     } finally {
       setSending(false);
@@ -263,17 +478,18 @@ export function SmsCodeInput({
           className={cls}
         />
       </div>
-      <div>
+      <div ref={containerRef} className="relative">
         {!compact && <label className="block text-sm font-medium text-gray-600 mb-1">验证码</label>}
         <div className="flex gap-2">
           <input
             type="text"
             value={codeValue}
             onChange={e => onCodeChange(e.target.value)}
+            onFocus={() => { if (!captchaVerified && countdown === 0) setShowCaptcha(true); }}
             placeholder="4位验证码"
             required
             maxLength={4}
-            className={`flex-1 ${cls}`}
+            className={`flex-1 ${cls} ${captchaVerified ? 'border-green-300 focus:border-green-400 focus:ring-green-500/20' : ''}`}
           />
           <button
             type="button"
@@ -288,6 +504,19 @@ export function SmsCodeInput({
             {countdown > 0 ? `${countdown}s` : '获取验证码'}
           </button>
         </div>
+        <CaptchaPopup
+          visible={showCaptcha && !captchaVerified}
+          onVerified={handleCaptchaVerified}
+          onClose={handleCloseCaptcha}
+        />
+        {captchaVerified && !showCaptcha && (
+          <div className="flex items-center gap-1 mt-1 text-[11px] text-green-600">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            滑块验证已通过
+          </div>
+        )}
       </div>
     </>
   );
@@ -298,30 +527,53 @@ export function EmailCodeInput({
   onEmailChange,
   codeValue,
   onCodeChange,
-  captchaId,
-  captchaX,
-  captchaVerified,
-  onCodeSent,
   compact,
 }: {
   emailValue: string;
   onEmailChange: (v: string) => void;
   codeValue: string;
   onCodeChange: (v: string) => void;
-  captchaId: string;
-  captchaX: number;
-  captchaVerified: boolean;
-  onCodeSent?: () => void;
   compact?: boolean;
 }) {
+  const [captchaVerified, setCaptchaVerified] = useState(false);
+  const [captchaId, setCaptchaId] = useState('');
+  const [captchaX, setCaptchaX] = useState(0);
+  const [showCaptcha, setShowCaptcha] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [sending, setSending] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     return () => {
       if (countdownRef.current) clearInterval(countdownRef.current);
     };
+  }, []);
+
+  useEffect(() => {
+    if (!showCaptcha) return;
+    const handleClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setShowCaptcha(false);
+      }
+    };
+    const timer = setTimeout(() => {
+      document.addEventListener('mousedown', handleClick);
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('mousedown', handleClick);
+    };
+  }, [showCaptcha]);
+
+  const handleCaptchaVerified = useCallback((id: string, x: number) => {
+    setCaptchaId(id);
+    setCaptchaX(x);
+    setCaptchaVerified(true);
+  }, []);
+
+  const handleCloseCaptcha = useCallback(() => {
+    setShowCaptcha(false);
   }, []);
 
   const handleSend = async () => {
@@ -340,7 +592,9 @@ export function EmailCodeInput({
           return prev - 1;
         });
       }, 1000);
-      onCodeSent?.();
+      setCaptchaVerified(false);
+      setCaptchaId('');
+      setCaptchaX(0);
     } catch {
     } finally {
       setSending(false);
@@ -364,17 +618,18 @@ export function EmailCodeInput({
           className={cls}
         />
       </div>
-      <div>
+      <div ref={containerRef} className="relative">
         {!compact && <label className="block text-sm font-medium text-gray-600 mb-1">验证码</label>}
         <div className="flex gap-2">
           <input
             type="text"
             value={codeValue}
             onChange={e => onCodeChange(e.target.value)}
+            onFocus={() => { if (!captchaVerified && countdown === 0) setShowCaptcha(true); }}
             placeholder="6位验证码"
             required
             maxLength={6}
-            className={`flex-1 ${cls}`}
+            className={`flex-1 ${cls} ${captchaVerified ? 'border-green-300 focus:border-green-400 focus:ring-green-500/20' : ''}`}
           />
           <button
             type="button"
@@ -389,6 +644,19 @@ export function EmailCodeInput({
             {countdown > 0 ? `${countdown}s` : '获取验证码'}
           </button>
         </div>
+        <CaptchaPopup
+          visible={showCaptcha && !captchaVerified}
+          onVerified={handleCaptchaVerified}
+          onClose={handleCloseCaptcha}
+        />
+        {captchaVerified && !showCaptcha && (
+          <div className="flex items-center gap-1 mt-1 text-[11px] text-green-600">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            滑块验证已通过
+          </div>
+        )}
       </div>
     </>
   );

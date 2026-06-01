@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -9,7 +9,7 @@ import {
   loginWithPhone,
   registerWithPhone,
 } from '@/lib/api';
-import { SliderCaptchaWidget, SmsCodeInput, EmailCodeInput } from '@/app/components/SmsVerification';
+import { SmsCodeInput, EmailCodeInput } from '@/app/components/SmsVerification';
 
 type Tab = 'password' | 'sms' | 'register';
 type RegisterSub = 'email' | 'phone';
@@ -29,63 +29,18 @@ export default function LoginPage() {
 
   const [smsPhone, setSmsPhone] = useState('');
   const [smsCode, setSmsCode] = useState('');
-  const [smsCaptchaId, setSmsCaptchaId] = useState('');
-  const [smsCaptchaX, setSmsCaptchaX] = useState(0);
-  const [smsCaptchaVerified, setSmsCaptchaVerified] = useState(false);
-  const [smsCaptchaKey, setSmsCaptchaKey] = useState(0);
 
   const [regEmail, setRegEmail] = useState('');
   const [regEmailPwd, setRegEmailPwd] = useState('');
   const [regEmailConfirm, setRegEmailConfirm] = useState('');
   const [regDisplayName, setRegDisplayName] = useState('');
   const [regEmailCode, setRegEmailCode] = useState('');
-  const [regEmailCaptchaId, setRegEmailCaptchaId] = useState('');
-  const [regEmailCaptchaX, setRegEmailCaptchaX] = useState(0);
-  const [regEmailCaptchaVerified, setRegEmailCaptchaVerified] = useState(false);
-  const [regEmailCaptchaKey, setRegEmailCaptchaKey] = useState(0);
 
   const [regPhone, setRegPhone] = useState('');
   const [regPhoneCode, setRegPhoneCode] = useState('');
   const [regPhonePwd, setRegPhonePwd] = useState('');
   const [regPhoneConfirm, setRegPhoneConfirm] = useState('');
   const [regPhoneDisplayName, setRegPhoneDisplayName] = useState('');
-  const [regCaptchaId, setRegCaptchaId] = useState('');
-  const [regCaptchaX, setRegCaptchaX] = useState(0);
-  const [regCaptchaVerified, setRegCaptchaVerified] = useState(false);
-  const [regCaptchaKey, setRegCaptchaKey] = useState(0);
-
-  const handleSmsCaptchaVerified = useCallback((captchaId: string, captchaX: number) => {
-    setSmsCaptchaId(captchaId);
-    setSmsCaptchaX(captchaX);
-    setSmsCaptchaVerified(true);
-  }, []);
-
-  const handleSmsCodeSent = useCallback(() => {
-    setSmsCaptchaVerified(false);
-    setSmsCaptchaKey(k => k + 1);
-  }, []);
-
-  const handleRegCaptchaVerified = useCallback((captchaId: string, captchaX: number) => {
-    setRegCaptchaId(captchaId);
-    setRegCaptchaX(captchaX);
-    setRegCaptchaVerified(true);
-  }, []);
-
-  const handleRegCodeSent = useCallback(() => {
-    setRegCaptchaVerified(false);
-    setRegCaptchaKey(k => k + 1);
-  }, []);
-
-  const handleRegEmailCaptchaVerified = useCallback((captchaId: string, captchaX: number) => {
-    setRegEmailCaptchaId(captchaId);
-    setRegEmailCaptchaX(captchaX);
-    setRegEmailCaptchaVerified(true);
-  }, []);
-
-  const handleRegEmailCodeSent = useCallback(() => {
-    setRegEmailCaptchaVerified(false);
-    setRegEmailCaptchaKey(k => k + 1);
-  }, []);
 
   const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -114,10 +69,6 @@ export default function LoginPage() {
       setError('请输入手机号和验证码');
       return;
     }
-    if (!smsCaptchaVerified) {
-      setError('请先完成滑块验证');
-      return;
-    }
     setLoading(true);
     try {
       await loginWithPhone(smsPhone, smsCode);
@@ -136,10 +87,6 @@ export default function LoginPage() {
     setError('');
     if (!regEmailCode) {
       setError('请输入邮箱验证码');
-      return;
-    }
-    if (!regEmailCaptchaVerified) {
-      setError('请先完成滑块验证');
       return;
     }
     if (regEmailPwd !== regEmailConfirm) {
@@ -172,10 +119,6 @@ export default function LoginPage() {
     }
     if (regPhonePwd !== regPhoneConfirm) {
       setError('两次输入的密码不一致');
-      return;
-    }
-    if (!regCaptchaVerified) {
-      setError('请先完成滑块验证');
       return;
     }
     setLoading(true);
@@ -271,16 +214,11 @@ export default function LoginPage() {
 
           {tab === 'sms' && (
             <form onSubmit={handleSmsLogin} className="space-y-4">
-              <SliderCaptchaWidget key={smsCaptchaKey} onVerified={handleSmsCaptchaVerified} />
               <SmsCodeInput
                 phoneValue={smsPhone}
                 onPhoneChange={setSmsPhone}
                 codeValue={smsCode}
                 onCodeChange={setSmsCode}
-                captchaId={smsCaptchaId}
-                captchaX={smsCaptchaX}
-                captchaVerified={smsCaptchaVerified}
-                onCodeSent={handleSmsCodeSent}
               />
               <p className="text-xs text-gray-400">未注册的手机号将自动创建账号</p>
               <button type="submit" disabled={loading} className="btn-primary w-full">
@@ -314,16 +252,11 @@ export default function LoginPage() {
 
               {regSub === 'email' && (
                 <form onSubmit={handleEmailRegister} className="space-y-4">
-                  <SliderCaptchaWidget key={regEmailCaptchaKey} onVerified={handleRegEmailCaptchaVerified} />
                   <EmailCodeInput
                     emailValue={regEmail}
                     onEmailChange={setRegEmail}
                     codeValue={regEmailCode}
                     onCodeChange={setRegEmailCode}
-                    captchaId={regEmailCaptchaId}
-                    captchaX={regEmailCaptchaX}
-                    captchaVerified={regEmailCaptchaVerified}
-                    onCodeSent={handleRegEmailCodeSent}
                   />
                   <div>
                     <label className="block text-sm font-medium text-gray-600 mb-1">昵称（可选）</label>
@@ -367,16 +300,11 @@ export default function LoginPage() {
 
               {regSub === 'phone' && (
                 <form onSubmit={handlePhoneRegister} className="space-y-4">
-                  <SliderCaptchaWidget key={regCaptchaKey} onVerified={handleRegCaptchaVerified} />
                   <SmsCodeInput
                     phoneValue={regPhone}
                     onPhoneChange={setRegPhone}
                     codeValue={regPhoneCode}
                     onCodeChange={setRegPhoneCode}
-                    captchaId={regCaptchaId}
-                    captchaX={regCaptchaX}
-                    captchaVerified={regCaptchaVerified}
-                    onCodeSent={handleRegCodeSent}
                   />
                   <div>
                     <label className="block text-sm font-medium text-gray-600 mb-1">设置密码</label>

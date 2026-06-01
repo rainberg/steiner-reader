@@ -1,10 +1,10 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { resetPassword } from '@/lib/api';
-import { SliderCaptchaWidget, EmailCodeInput } from '@/app/components/SmsVerification';
+import { EmailCodeInput } from '@/app/components/SmsVerification';
 
 const inputCls =
   'w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-all';
@@ -15,34 +15,14 @@ export default function ForgotPasswordPage() {
   const [emailCode, setEmailCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [captchaId, setCaptchaId] = useState('');
-  const [captchaX, setCaptchaX] = useState(0);
-  const [captchaVerified, setCaptchaVerified] = useState(false);
-  const [captchaKey, setCaptchaKey] = useState(0);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
-
-  const handleCaptchaVerified = useCallback((captchaId: string, captchaX: number) => {
-    setCaptchaId(captchaId);
-    setCaptchaX(captchaX);
-    setCaptchaVerified(true);
-  }, []);
-
-  const handleCodeSent = useCallback(() => {
-    setCaptchaVerified(false);
-    setCaptchaKey(k => k + 1);
-  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSuccess('');
-
-    if (!captchaVerified) {
-      setError('请先完成滑块验证');
-      return;
-    }
     if (!emailCode) {
       setError('请输入验证码');
       return;
@@ -55,7 +35,6 @@ export default function ForgotPasswordPage() {
       setError('两次输入的密码不一致');
       return;
     }
-
     setLoading(true);
     try {
       await resetPassword(email, emailCode, newPassword);
@@ -87,16 +66,11 @@ export default function ForgotPasswordPage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            <SliderCaptchaWidget key={captchaKey} onVerified={handleCaptchaVerified} />
             <EmailCodeInput
               emailValue={email}
               onEmailChange={setEmail}
               codeValue={emailCode}
               onCodeChange={setEmailCode}
-              captchaId={captchaId}
-              captchaX={captchaX}
-              captchaVerified={captchaVerified}
-              onCodeSent={handleCodeSent}
             />
             <div>
               <label className="block text-sm font-medium text-gray-600 mb-1">新密码</label>
