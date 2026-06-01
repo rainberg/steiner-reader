@@ -168,39 +168,77 @@ async def list_book_groups(db: AsyncSession = Depends(get_db)):
 @router.get("", response_model=list[BookResponse])
 async def list_books(db: AsyncSession = Depends(get_db)):
     """Get all books with lecture summaries (lightweight — no sentence data)."""
-    result = await db.execute(
-        select(Book)
-        .options(selectinload(Book.lectures))
-        .order_by(Book.created_at.desc())
+    books_result = await db.execute(
+        select(Book).order_by(Book.created_at.desc())
     )
-    books = result.scalars().all()
+    books = books_result.scalars().all()
+    if not books:
+        return []
+
+    book_ids = [b.id for b in books]
+
+    lectures_result = await db.execute(
+        select(Lecture).where(Lecture.book_id.in_(book_ids)).order_by(Lecture.order_index)
+    )
+    lectures = lectures_result.scalars().all()
+
+    lecture_ids = [l.id for l in lectures]
+
+    sentence_counts = {}
+    if lecture_ids:
+        sc_result = await db.execute(
+            select(Paragraph.lecture_id, func.count(Sentence.id))
+            .select_from(Sentence)
+            .join(Paragraph)
+            .where(Paragraph.lecture_id.in_(lecture_ids))
+            .group_by(Paragraph.lecture_id)
+        )
+        sentence_counts = dict(sc_result.all())
+
+    image_counts = {}
+    if lecture_ids:
+        ic_result = await db.execute(
+            text("SELECT lecture_id, COUNT(*) FROM lecture_images WHERE lecture_id = ANY(:ids) GROUP BY lecture_id"),
+            {"ids": lecture_ids},
+        )
+        image_counts = {row[0]: row[1] for row in ic_result.all()}
+
+    translated_counts = {}
+    if lecture_ids:
+        tc_result = await db.execute(
+            select(Paragraph.lecture_id, func.count(Sentence.id))
+            .select_from(Sentence)
+            .join(Paragraph)
+            .where(
+                Paragraph.lecture_id.in_(lecture_ids),
+                Sentence.text_zh.isnot(None),
+                Sentence.text_zh != "",
+            )
+            .group_by(Paragraph.lecture_id)
+        )
+        translated_counts = dict(tc_result.all())
+
+    published_lecture_ids = {l.id for l in lectures if l.is_published}
+
+    lectures_by_book: dict[int, list[Lecture]] = {}
+    for lec in lectures:
+        lectures_by_book.setdefault(lec.book_id, []).append(lec)
+
+    book_image_counts = {}
+    bi_result = await db.execute(
+        text("SELECT l.book_id, COUNT(li.id) FROM lecture_images li JOIN lectures l ON li.lecture_id = l.id WHERE l.book_id = ANY(:bids) GROUP BY l.book_id"),
+        {"bids": book_ids},
+    )
+    book_image_counts = {row[0]: row[1] for row in bi_result.all()}
 
     response = []
     for book in books:
+        book_lectures = lectures_by_book.get(book.id, [])
         lecture_summaries = []
-        for lec in sorted(book.lectures, key=lambda l: l.order_index):
-            # Count sentences efficiently
-            stmt = (
-                select(func.count(Sentence.id))
-                .select_from(Sentence)
-                .join(Paragraph)
-                .where(Paragraph.lecture_id == lec.id)
-            )
-            count_result = await db.execute(stmt)
-            sentence_count = count_result.scalar() or 0
-
-            # Count images for this lecture
-            img_stmt = text("SELECT COUNT(*) FROM lecture_images WHERE lecture_id = :lid")
-            img_result = await db.execute(img_stmt, {"lid": lec.id})
-            lec_image_count = img_result.scalar() or 0
-
-            # Count translated sentences for this lecture
-            tr_stmt = text("SELECT COUNT(*) FROM sentences s "
-                          "JOIN paragraphs p ON s.paragraph_id = p.id "
-                          "WHERE p.lecture_id = :lid AND s.text_zh IS NOT NULL AND s.text_zh != ''")
-            tr_result = await db.execute(tr_stmt, {"lid": lec.id})
-            translated_count = tr_result.scalar() or 0
-
+        for lec in book_lectures:
+            sc = sentence_counts.get(lec.id, 0)
+            ic = image_counts.get(lec.id, 0)
+            tc = translated_counts.get(lec.id, 0) if lec.id in published_lecture_ids else 0
             lecture_summaries.append(LectureSummary(
                 id=lec.id,
                 title_de=lec.title_de,
@@ -208,19 +246,12 @@ async def list_books(db: AsyncSession = Depends(get_db)):
                 lecture_date=lec.lecture_date,
                 location=lec.location,
                 order_index=lec.order_index,
-                sentence_count=sentence_count,
-                image_count=lec_image_count,
-                translated_count=translated_count if lec.is_published else 0,
+                sentence_count=sc,
+                image_count=ic,
+                translated_count=tc,
                 level=lec.level,
                 parent_id=lec.parent_id,
             ))
-
-        # Count images for this book (from lecture_images via lectures)
-        img_result = await db.execute(
-            text("SELECT COUNT(*) FROM lecture_images li JOIN lectures l ON li.lecture_id = l.id WHERE l.book_id = :bid"),
-            {"bid": book.id}
-        )
-        image_count = img_result.scalar() or 0
 
         response.append(BookResponse(
             id=book.id,
@@ -231,7 +262,7 @@ async def list_books(db: AsyncSession = Depends(get_db)):
             cover_url=book.cover_url,
             created_at=book.created_at,
             lectures=lecture_summaries,
-            image_count=image_count,
+            image_count=book_image_counts.get(book.id, 0),
         ))
 
     return response
@@ -240,54 +271,68 @@ async def list_books(db: AsyncSession = Depends(get_db)):
 @router.get("/{book_id}", response_model=BookDetail)
 async def get_book(book_id: int, db: AsyncSession = Depends(get_db)):
     """Get book detail with lectures and translation counts (no sentence data — use /lectures/{id} for reading)."""
-    # Get book with lectures
     result = await db.execute(
-        select(Book)
-        .where(Book.id == book_id)
-        .options(selectinload(Book.lectures))
+        select(Book).where(Book.id == book_id)
     )
     book = result.scalar_one_or_none()
 
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
 
-    # Get sentence counts per lecture efficiently
+    lectures_result = await db.execute(
+        select(Lecture).where(Lecture.book_id == book_id).order_by(Lecture.order_index)
+    )
+    lectures = lectures_result.scalars().all()
+
+    lecture_ids = [l.id for l in lectures]
+
+    sentence_counts = {}
+    translated_counts = {}
+    image_counts = {}
+
+    if lecture_ids:
+        sc_result = await db.execute(
+            select(Paragraph.lecture_id, func.count(Sentence.id))
+            .select_from(Sentence)
+            .join(Paragraph)
+            .where(Paragraph.lecture_id.in_(lecture_ids))
+            .group_by(Paragraph.lecture_id)
+        )
+        sentence_counts = dict(sc_result.all())
+
+        tc_result = await db.execute(
+            select(Paragraph.lecture_id, func.count(Sentence.id))
+            .select_from(Sentence)
+            .join(Paragraph)
+            .where(
+                Paragraph.lecture_id.in_(lecture_ids),
+                Sentence.text_zh.isnot(None),
+            )
+            .group_by(Paragraph.lecture_id)
+        )
+        translated_counts = dict(tc_result.all())
+
+        ic_result = await db.execute(
+            text("SELECT lecture_id, COUNT(*) FROM lecture_images WHERE lecture_id = ANY(:ids) GROUP BY lecture_id"),
+            {"ids": lecture_ids},
+        )
+        image_counts = {row[0]: row[1] for row in ic_result.all()}
+
+    published_ids = {l.id for l in lectures if l.is_published}
+
     lectures_items = []
-    for lec in sorted(book.lectures, key=lambda l: l.order_index):
-        total_result = await db.execute(
-            select(func.count(Sentence.id))
-            .select_from(Sentence)
-            .join(Paragraph)
-            .where(Paragraph.lecture_id == lec.id)
-        )
-        total = total_result.scalar() or 0
-
-        translated_result = await db.execute(
-            select(func.count(Sentence.id))
-            .select_from(Sentence)
-            .join(Paragraph)
-            .where(Paragraph.lecture_id == lec.id, Sentence.text_zh.isnot(None))
-        )
-        translated = translated_result.scalar() or 0
-
-        # Get image count for this lecture
-        img_result = await db.execute(
-            text("SELECT COUNT(*) FROM lecture_images WHERE lecture_id = :lid"),
-            {"lid": lec.id}
-        )
-        image_count = img_result.scalar() or 0
-
+    for lec in lectures:
         lectures_items.append(LectureListItem(
             id=lec.id,
             book_id=book.id,
             title_de=lec.title_de,
-                title_zh=lec.title_zh,
+            title_zh=lec.title_zh,
             lecture_date=lec.lecture_date,
             location=lec.location,
             order_index=lec.order_index,
-            sentence_count=total,
-            image_count=image_count,
-            translated_count=translated if lec.is_published else 0,
+            sentence_count=sentence_counts.get(lec.id, 0),
+            image_count=image_counts.get(lec.id, 0),
+            translated_count=translated_counts.get(lec.id, 0) if lec.id in published_ids else 0,
             level=lec.level,
             parent_id=lec.parent_id,
         ))
@@ -301,7 +346,7 @@ async def get_book(book_id: int, db: AsyncSession = Depends(get_db)):
         cover_url=book.cover_url,
         created_at=book.created_at,
         lectures=lectures_items,
-        image_count=sum(lec.image_count for lec in lectures_items),
+        image_count=sum(li.image_count for li in lectures_items),
     )
 
 
