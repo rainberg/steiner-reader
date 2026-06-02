@@ -144,13 +144,13 @@ export function SliderCaptchaWidget({ onVerified, compact }: { onVerified: (capt
   return (
     <div>
       {!compact && <label className="block text-sm font-medium text-gray-600 mb-1">滑块验证</label>}
-      <div className={`relative rounded-lg overflow-hidden border border-gray-200 bg-gray-100 select-none ${compact ? 'max-w-[260px]' : ''}`}>
+      <div className="relative rounded-lg overflow-hidden border border-gray-200 bg-gray-100 select-none">
         <div className="relative">
           <img
             ref={bgRef}
             src={captcha.bg_image}
             alt=""
-            className={`w-full h-auto block ${compact ? 'max-h-[100px] object-cover' : ''}`}
+            className="w-full h-auto block"
             draggable={false}
           />
           <img
