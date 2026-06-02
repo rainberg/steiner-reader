@@ -11,7 +11,8 @@ import {
 } from '@/lib/api';
 import { SmsCodeInput, EmailCodeInput } from '@/app/components/SmsVerification';
 
-type Tab = 'password' | 'sms' | 'register';
+type View = 'login' | 'register';
+type LoginTab = 'password' | 'sms';
 type RegisterSub = 'email' | 'phone';
 
 const inputCls =
@@ -19,7 +20,8 @@ const inputCls =
 
 export default function LoginPage() {
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>('password');
+  const [view, setView] = useState<View>('login');
+  const [loginTab, setLoginTab] = useState<LoginTab>('password');
   const [regSub, setRegSub] = useState<RegisterSub>('email');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -41,6 +43,16 @@ export default function LoginPage() {
   const [regPhonePwd, setRegPhonePwd] = useState('');
   const [regPhoneConfirm, setRegPhoneConfirm] = useState('');
   const [regPhoneDisplayName, setRegPhoneDisplayName] = useState('');
+
+  const switchView = (v: View) => {
+    setView(v);
+    setError('');
+  };
+
+  const switchLoginTab = (t: LoginTab) => {
+    setLoginTab(t);
+    setError('');
+  };
 
   const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -134,101 +146,110 @@ export default function LoginPage() {
     }
   };
 
-  const switchTab = (t: Tab) => {
-    setTab(t);
-    setError('');
-  };
-
-  const tabs: { key: Tab; label: string }[] = [
+  const loginTabs: { key: LoginTab; label: string }[] = [
     { key: 'password', label: '密码登录' },
     { key: 'sms', label: '验证码登录' },
-    { key: 'register', label: '注册' },
   ];
 
   return (
     <div className="min-h-[70vh] flex items-center justify-center">
       <div className="w-full max-w-sm px-4">
         <div className="card p-8">
-          <h1 className="text-xl font-bold text-gray-900 mb-1">
-            {tab === 'register' ? '注册' : '登录'}
-          </h1>
-          <p className="text-sm text-gray-500 mb-6">
-            {tab === 'register' ? '注册即赠送翻译积分' : '登录以使用翻译和上传功能'}
-          </p>
-
-          <div className="flex mb-6 border-b border-gray-200">
-            {tabs.map(t => (
-              <button
-                key={t.key}
-                type="button"
-                onClick={() => switchTab(t.key)}
-                className={`flex-1 pb-2 text-sm font-medium transition border-b-2 -mb-px ${
-                  tab === t.key
-                    ? 'border-indigo-500 text-indigo-600'
-                    : 'border-transparent text-gray-400 hover:text-gray-600'
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-
-          {error && (
-            <div className="bg-red-50/80 border border-red-100 text-red-600 text-sm px-3 py-2 rounded-lg mb-4">
-              {error}
-            </div>
-          )}
-
-          {tab === 'password' && (
-            <form onSubmit={handlePasswordLogin} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">邮箱或手机号</label>
-                <input
-                  type="text"
-                  value={account}
-                  onChange={e => setAccount(e.target.value)}
-                  placeholder="输入邮箱或手机号"
-                  required
-                  className={inputCls}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">密码</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  placeholder="输入密码"
-                  required
-                  className={inputCls}
-                />
-              </div>
-              <div className="flex justify-end">
-                <Link href="/forgot-password" className="text-xs text-indigo-500 hover:text-indigo-600">忘记密码？</Link>
-              </div>
-              <button type="submit" disabled={loading} className="btn-primary w-full">
-                {loading ? '处理中...' : '登录'}
-              </button>
-            </form>
-          )}
-
-          {tab === 'sms' && (
-            <form onSubmit={handleSmsLogin} className="space-y-4">
-              <SmsCodeInput
-                phoneValue={smsPhone}
-                onPhoneChange={setSmsPhone}
-                codeValue={smsCode}
-                onCodeChange={setSmsCode}
-              />
-              <p className="text-xs text-gray-400">未注册的手机号将自动创建账号</p>
-              <button type="submit" disabled={loading} className="btn-primary w-full">
-                {loading ? '处理中...' : '登录'}
-              </button>
-            </form>
-          )}
-
-          {tab === 'register' && (
+          {/* ── 登录视图 ── */}
+          {view === 'login' && (
             <>
+              <h1 className="text-xl font-bold text-gray-900 mb-1">登录</h1>
+              <p className="text-sm text-gray-500 mb-6">登录以使用翻译和上传功能</p>
+
+              <div className="flex mb-6 border-b border-gray-200">
+                {loginTabs.map(t => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    onClick={() => switchLoginTab(t.key)}
+                    className={`flex-1 pb-2 text-sm font-medium transition border-b-2 -mb-px ${
+                      loginTab === t.key
+                        ? 'border-indigo-500 text-indigo-600'
+                        : 'border-transparent text-gray-400 hover:text-gray-600'
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
+              {error && (
+                <div className="bg-red-50/80 border border-red-100 text-red-600 text-sm px-3 py-2 rounded-lg mb-4">
+                  {error}
+                </div>
+              )}
+
+              {loginTab === 'password' && (
+                <form onSubmit={handlePasswordLogin} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600 mb-1">邮箱或手机号</label>
+                    <input
+                      type="text"
+                      value={account}
+                      onChange={e => setAccount(e.target.value)}
+                      placeholder="输入邮箱或手机号"
+                      required
+                      className={inputCls}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600 mb-1">密码</label>
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={e => setPassword(e.target.value)}
+                      placeholder="输入密码"
+                      required
+                      className={inputCls}
+                    />
+                  </div>
+                  <div className="flex justify-end">
+                    <Link href="/forgot-password" className="text-xs text-indigo-500 hover:text-indigo-600">忘记密码？</Link>
+                  </div>
+                  <button type="submit" disabled={loading} className="btn-primary w-full">
+                    {loading ? '处理中...' : '登录'}
+                  </button>
+                </form>
+              )}
+
+              {loginTab === 'sms' && (
+                <form onSubmit={handleSmsLogin} className="space-y-4">
+                  <SmsCodeInput
+                    phoneValue={smsPhone}
+                    onPhoneChange={setSmsPhone}
+                    codeValue={smsCode}
+                    onCodeChange={setSmsCode}
+                  />
+                  <p className="text-xs text-gray-400">未注册的手机号将自动创建账号</p>
+                  <button type="submit" disabled={loading} className="btn-primary w-full">
+                    {loading ? '处理中...' : '登录'}
+                  </button>
+                </form>
+              )}
+
+              <div className="mt-6 pt-4 border-t border-gray-100 text-center">
+                <button
+                  type="button"
+                  onClick={() => switchView('register')}
+                  className="text-sm text-indigo-500 hover:text-indigo-600"
+                >
+                  没有账号？立即注册
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* ── 注册视图 ── */}
+          {view === 'register' && (
+            <>
+              <h1 className="text-xl font-bold text-gray-900 mb-1">注册</h1>
+              <p className="text-sm text-gray-500 mb-6">注册即赠送翻译积分</p>
+
               <div className="flex mb-4 bg-gray-100 rounded-lg p-1">
                 <button
                   type="button"
@@ -249,6 +270,12 @@ export default function LoginPage() {
                   手机号注册
                 </button>
               </div>
+
+              {error && (
+                <div className="bg-red-50/80 border border-red-100 text-red-600 text-sm px-3 py-2 rounded-lg mb-4">
+                  {error}
+                </div>
+              )}
 
               {regSub === 'email' && (
                 <form onSubmit={handleEmailRegister} className="space-y-4">
@@ -345,6 +372,16 @@ export default function LoginPage() {
                   </button>
                 </form>
               )}
+
+              <div className="mt-6 pt-4 border-t border-gray-100 text-center">
+                <button
+                  type="button"
+                  onClick={() => switchView('login')}
+                  className="text-sm text-indigo-500 hover:text-indigo-600"
+                >
+                  已有账号？返回登录
+                </button>
+              </div>
             </>
           )}
         </div>
