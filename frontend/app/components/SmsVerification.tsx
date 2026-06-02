@@ -331,7 +331,7 @@ function CaptchaPopup({
               ref={bgRef}
               src={captcha.bg_image}
               alt=""
-              className="w-full h-auto block max-h-[100px] object-cover"
+              className="w-full h-auto block"
               draggable={false}
             />
             <img
