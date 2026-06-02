@@ -401,37 +401,6 @@ export default function LecturePage() {
           ))}
         </div>
 
-        {/* Bottom download section — only for contributors */}
-        {isPublished && hasDownloadAccess && (
-          <div className="mt-8 text-center">
-            <span className="text-xs text-amber-600 block mb-2">请及时下载已解锁内容。本网站不保证长期运行或永久提供访问。</span>
-            <a
-              href={`/api/lectures/${lectureId}/download-pdf`}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={async (e) => {
-                e.preventDefault();
-                await handleDownload();
-              }}
-              style={{
-                display: 'inline-block',
-                padding: '10px 24px',
-                borderRadius: '8px',
-                fontSize: '14px',
-                fontWeight: 700,
-                color: '#fff',
-                backgroundColor: '#059669',
-                border: '1px solid #047857',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
-                cursor: 'pointer',
-                textDecoration: 'none',
-              }}
-            >
-              下载 PDF
-            </a>
-          </div>
-        )}
-
         <div className="mt-6 text-center">
           <Link href={`/books/${bookId}`} className="text-blue-600 hover:underline text-sm">
             返回目录
