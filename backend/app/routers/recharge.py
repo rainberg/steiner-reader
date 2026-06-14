@@ -2,18 +2,27 @@
 
 import hashlib
 import os
+import secrets
 import uuid
 import logging
 from datetime import datetime
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
-from app.db.models import RechargeRequest, CreditSetting
+from app.db.models import RechargeCode, RechargeRequest, CreditSetting
+from app.models.schemas import (
+    GenerateCodesRequest,
+    GenerateCodesResponse,
+    RechargeCodeResponse,
+    RechargeCodeList,
+    RedeemCodeRequest,
+    RedeemCodeResponse,
+)
 from app.routers.auth import AuthUser, require_user, require_admin
 from app.config import settings
 
@@ -36,9 +45,9 @@ async def _add_credits_via_auth(user_id: str, amount: int, token: str) -> dict:
     async with httpx.AsyncClient(timeout=15) as client:
         try:
             resp = await client.post(
-                f"{AUTH_BASE}/api/admin/users/{user_id}/add-credits",
+                f"{AUTH_BASE}/api/credits/topup",
                 headers={"Authorization": f"Bearer {token}"},
-                json={"credits": amount, "remark": "充值审核通过"},
+                json={"amount": amount, "description": "充值码兑换"},
             )
             if resp.status_code == 200:
                 return resp.json()
@@ -51,6 +60,13 @@ async def _add_credits_via_auth(user_id: str, amount: int, token: str) -> dict:
         except httpx.HTTPError as exc:
             logger.error("Auth-service add-credits request failed: %s", exc)
             raise HTTPException(status_code=502, detail=f"Auth Service 不可用: {exc}")
+
+
+def _generate_code() -> str:
+    """Generate a random recharge code in format XXXX-XXXX-XXXX."""
+    chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    raw = "".join(secrets.choice(chars) for _ in range(12))
+    return f"{raw[:4]}-{raw[4:8]}-{raw[8:]}"
 
 
 class RechargeSubmitRequest(BaseModel):
@@ -298,6 +314,132 @@ async def get_payment_qr():
     if not os.path.exists(PAYMENT_QR_PATH):
         raise HTTPException(status_code=404, detail="收款码未设置")
     return FileResponse(PAYMENT_QR_PATH, media_type="image/png")
+
+
+@router.post("/admin/generate-codes", response_model=GenerateCodesResponse)
+async def generate_recharge_codes(
+    req: GenerateCodesRequest,
+    admin: AuthUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    if req.credits <= 0:
+        raise HTTPException(status_code=400, detail="积分值必须大于0")
+    if req.count < 1 or req.count > 100:
+        raise HTTPException(status_code=400, detail="生成数量需在1-100之间")
+
+    batch_id = uuid.uuid4().hex
+    codes = []
+
+    for _ in range(req.count):
+        for _attempt in range(10):
+            code = _generate_code()
+            exists = await db.execute(
+                select(RechargeCode).where(RechargeCode.code == code)
+            )
+            if exists.scalar_one_or_none() is None:
+                break
+        else:
+            raise HTTPException(status_code=500, detail="生成唯一充值码失败，请重试")
+
+        db.add(RechargeCode(
+            code=code,
+            credits=req.credits,
+            expires_at=req.expires_at,
+            created_by=admin.id,
+            status="active",
+            batch_id=batch_id,
+        ))
+        codes.append(code)
+
+    await db.commit()
+    return GenerateCodesResponse(
+        batch_id=batch_id,
+        codes=codes,
+        count=len(codes),
+        credits_per_code=req.credits,
+    )
+
+
+@router.get("/admin/codes", response_model=RechargeCodeList)
+async def list_recharge_codes(
+    status: str | None = Query(None),
+    batch_id: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    admin: AuthUser = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(RechargeCode)
+    count_query = select(func.count()).select_from(RechargeCode)
+
+    if status and status != "all":
+        query = query.where(RechargeCode.status == status)
+        count_query = count_query.where(RechargeCode.status == status)
+    if batch_id:
+        query = query.where(RechargeCode.batch_id == batch_id)
+        count_query = count_query.where(RechargeCode.batch_id == batch_id)
+
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    offset = (page - 1) * page_size
+    query = query.order_by(RechargeCode.id.desc()).offset(offset).limit(page_size)
+
+    result = await db.execute(query)
+    items = [RechargeCodeResponse.model_validate(row) for row in result.scalars().all()]
+
+    return RechargeCodeList(total=total, page=page, page_size=page_size, items=items)
+
+
+@router.post("/redeem", response_model=RedeemCodeResponse)
+async def redeem_recharge_code(
+    req: RedeemCodeRequest,
+    user: AuthUser = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    code = req.code.strip().upper()
+
+    result = await db.execute(
+        select(RechargeCode)
+        .where(RechargeCode.code == code)
+        .with_for_update()
+    )
+    recharge_code = result.scalar_one_or_none()
+
+    if not recharge_code:
+        raise HTTPException(status_code=404, detail="充值码不存在")
+
+    if recharge_code.status == "used":
+        raise HTTPException(status_code=400, detail="充值码已被使用")
+
+    if recharge_code.status == "expired":
+        raise HTTPException(status_code=400, detail="充值码已过期")
+
+    if recharge_code.expires_at and recharge_code.expires_at < datetime.utcnow():
+        recharge_code.status = "expired"
+        await db.commit()
+        raise HTTPException(status_code=400, detail="充值码已过期")
+
+    recharge_code.status = "used"
+    recharge_code.used_by = user.id
+    recharge_code.used_at = datetime.utcnow()
+
+    try:
+        await _add_credits_via_auth(user.id, recharge_code.credits, user.raw_token)
+    except HTTPException:
+        recharge_code.status = "active"
+        recharge_code.used_by = None
+        recharge_code.used_at = None
+        await db.commit()
+        raise
+
+    await db.commit()
+
+    return RedeemCodeResponse(
+        success=True,
+        credits_added=recharge_code.credits,
+        message=f"充值码兑换成功，获得 {recharge_code.credits} 积分",
+    )
 
 
 @router.get("/payment-proof/{filename}")

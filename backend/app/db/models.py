@@ -205,6 +205,20 @@ class RechargeRequest(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class CreditTransaction(Base):
+    __tablename__ = "credit_transactions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(36), nullable=False, index=True)
+    amount = Column(Integer, nullable=False)
+    balance_after = Column(Integer, nullable=False)
+    transaction_type = Column(String(50), nullable=False)
+    reference_type = Column(String(50), nullable=True)
+    reference_id = Column(Integer, nullable=True)
+    description = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class TranslationPublication(Base):
     __tablename__ = "translation_publications"
 
@@ -221,6 +235,57 @@ class TranslationPublication(Base):
 
     lecture = relationship("Lecture", foreign_keys=[lecture_id])
     book = relationship("Book", foreign_keys=[book_id])
+
+
+class LocationAbbreviation(Base):
+    __tablename__ = "location_abbreviations"
+
+    code = Column(String(10), primary_key=True)
+    full_name = Column(String(100), nullable=False)
+
+
+class LectureCatalog(Base):
+    __tablename__ = "lecture_catalog"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    schmidt_number = Column(String(20))
+    lecture_date = Column(Date)
+    location_code = Column(String(10))
+    location_name = Column(String(100))
+    ga_number = Column(String(20), index=True)
+    year = Column(Integer, index=True)
+    is_collected = Column(Boolean, default=False, server_default="false")
+    is_lecture_matched = Column(Boolean, default=False, server_default="false")
+    matched_book_id = Column(Integer, ForeignKey("books.id", ondelete="SET NULL"), nullable=True)
+    matched_lecture_id = Column(Integer, ForeignKey("lectures.id", ondelete="SET NULL"), nullable=True)
+
+
+class RechargeCode(Base):
+    __tablename__ = "recharge_codes"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(16), unique=True, nullable=False, index=True)
+    credits = Column(Integer, nullable=False)
+    expires_at = Column(DateTime, nullable=True)
+    created_by = Column(String(36), nullable=False)
+    used_by = Column(String(36), nullable=True)
+    used_at = Column(DateTime, nullable=True)
+    status = Column(String(10), default="active", server_default="active", index=True)
+    batch_id = Column(String(36), nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class InviteCode(Base):
+    __tablename__ = "invite_codes"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(16), unique=True, nullable=False, index=True)
+    owner_id = Column(String(36), nullable=False, index=True)
+    credits = Column(Integer, nullable=False)
+    used_by = Column(String(36), nullable=True)
+    used_at = Column(DateTime, nullable=True)
+    status = Column(String(10), default="active", server_default="active", index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class UserTranslationJob(Base):

@@ -264,3 +264,122 @@ class EditLogEntry(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# --- Lecture Catalog ---
+
+class CatalogLectureResponse(BaseModel):
+    id: int
+    schmidt_number: Optional[str] = None
+    lecture_date: Optional[date | str] = None
+    location_code: Optional[str] = None
+    location_name: Optional[str] = None
+    ga_number: Optional[str] = None
+    year: Optional[int] = None
+    is_collected: bool = False
+    is_lecture_matched: bool = False
+    matched_book_id: Optional[int] = None
+    matched_lecture_id: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
+
+class CatalogLectureList(BaseModel):
+    total: int
+    page: int
+    page_size: int
+    items: list[CatalogLectureResponse]
+
+
+class CatalogStatsResponse(BaseModel):
+    total: int
+    collected: int
+    lecture_matched: int
+    year_range: list[int]
+    by_year: dict[str, int]
+    by_location: list[dict]
+    by_decade: dict[str, int]
+
+
+class CatalogLocationResponse(BaseModel):
+    code: str
+    full_name: str
+    lecture_count: int
+
+
+# --- Recharge Code ---
+
+class GenerateCodesRequest(BaseModel):
+    credits: int
+    count: int = 1
+    expires_at: datetime | None = None
+
+class RechargeCodeResponse(BaseModel):
+    id: int
+    code: str
+    credits: int
+    expires_at: datetime | None
+    created_by: str
+    used_by: str | None
+    used_at: datetime | None
+    status: str
+    batch_id: str | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+class RechargeCodeList(BaseModel):
+    total: int
+    page: int
+    page_size: int
+    items: list[RechargeCodeResponse]
+
+class GenerateCodesResponse(BaseModel):
+    batch_id: str
+    codes: list[str]
+    count: int
+    credits_per_code: int
+
+class RedeemCodeRequest(BaseModel):
+    code: str
+
+class RedeemCodeResponse(BaseModel):
+    success: bool
+    credits_added: int
+    message: str
+
+
+# --- Invite Code ---
+
+class InviteCodeResponse(BaseModel):
+    id: int
+    code: str
+    owner_id: str
+    credits: int
+    used_by: str | None
+    used_at: datetime | None
+    status: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+class MyInviteCodesResponse(BaseModel):
+    quota: int
+    used: int
+    remaining: int
+    codes: list[InviteCodeResponse]
+
+class GenerateInviteCodeResponse(BaseModel):
+    code: str
+    credits: int
+    remaining_quota: int
+
+class RedeemInviteCodeRequest(BaseModel):
+    invite_code: str
+    new_user_id: str
+
+class RedeemInviteCodeResponse(BaseModel):
+    success: bool
+    credits_added: int
+    message: str

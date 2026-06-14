@@ -24,6 +24,9 @@ class SearchResult(BaseModel):
     book: str = ""
     ga_number: str = ""
     score: float = 0.0
+    book_id: int | None = None
+    lecture_id: int | None = None
+    sentence_id: int | None = None
 
 
 @router.get("/search")
@@ -50,47 +53,45 @@ async def search_steiner(q: str = Query(..., min_length=1), k: int = Query(5, ge
             )
             results = search_resp.json().get("result", []) if search_resp.status_code == 200 else []
 
-        # Step 3: Map PDF filenames to book info
-        pdf_map = {}
-        pdf_names = set()
+        # Step 3: Collect book_ids from payload, batch fetch book info
+        book_ids = set()
         for r in results:
             p = r.get("payload", {})
-            meta = p.get("metadata", {}) if isinstance(p.get("metadata"), dict) else {}
-            src = meta.get("source", "")
-            if src:
-                pdf_names.add(src)
+            bid = p.get("book_id")
+            if bid:
+                book_ids.add(bid)
 
-        if pdf_names:
+        book_info: dict[int, dict] = {}
+        if book_ids:
             try:
                 from app.db.database import async_session
                 from sqlalchemy import text
                 async with async_session() as db:
-                    for pdf_name in pdf_names:
-                        pn = pdf_name.replace(".pdf", "")
-                        result = await db.execute(
-                            text("SELECT ga_number, title_de, title_zh FROM books WHERE REPLACE(pdf_filename, '.pdf', '') LIKE '%' || :pn || '%' OR REPLACE(pdf_filename, '.epub', '') LIKE '%' || :pn || '%' OR REPLACE(pdf_filename, '.bdn', '') LIKE '%' || :pn || '%' LIMIT 1"),
-                            {"pn": pn}
-                        )
-                        row = result.first()
-                        if row:
-                            pdf_map[pdf_name] = {"ga": row[0], "de": row[1], "zh": row[2]}
+                    result = await db.execute(
+                        text("SELECT id, ga_number, title_de, title_zh FROM books WHERE id = ANY(:ids)"),
+                        {"ids": list(book_ids)}
+                    )
+                    for row in result.fetchall():
+                        book_info[row[0]] = {"ga": row[1], "de": row[2], "zh": row[3]}
             except Exception as e:
-                logger.warning(f"Book lookup: {e}")
+                logger.warning(f"Book info lookup: {e}")
 
         items = []
         for r in results:
             p = r.get("payload", {})
-            meta = p.get("metadata", {}) if isinstance(p.get("metadata"), dict) else {}
-            src = meta.get("source", "")
-            info = pdf_map.get(src, {})
+            bid = p.get("book_id")
+            info = book_info.get(bid, {}) if bid else {}
             ga = info.get("ga", "")
-            label = f"{ga}: {info.get('zh') or info.get('de') or ''}" if ga else src
+            label = f"{ga}: {info.get('zh') or info.get('de') or ''}" if ga else p.get("metadata", {}).get("source", "")
             items.append(SearchResult(
                 content_de=p.get("page_content", ""),
                 content_zh=p.get("zh_content", ""),
                 book=label,
                 ga_number=ga,
                 score=r.get("score", 0),
+                book_id=bid,
+                lecture_id=p.get("lecture_id"),
+                sentence_id=p.get("sentence_id"),
             ))
 
         return {"query": q, "results": [i.model_dump() for i in items], "count": len(items)}
