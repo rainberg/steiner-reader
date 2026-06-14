@@ -334,11 +334,13 @@ async function throwAuthError(res: Response, fallbackMsg: string): Promise<never
   throw new Error(err.detail || fallbackMsg);
 }
 
-export async function register(email: string, password: string, displayName?: string, emailCode?: string): Promise<AuthResponse> {
+export async function register(email: string, password: string, displayName?: string, emailCode?: string, inviteCode?: string): Promise<AuthResponse> {
+  const body: Record<string, unknown> = { email, password, display_name: displayName, app: AUTH_APP, email_code: emailCode };
+  if (inviteCode) body.invite_code = inviteCode;
   const res = await fetch(`${AUTH_BASE}/api/auth/register/email`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password, display_name: displayName, app: AUTH_APP, email_code: emailCode }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) return throwAuthError(res, '注册失败');
   return handleAuthResponse(res);
@@ -364,11 +366,13 @@ export async function loginByPhone(phone: string, code: string): Promise<AuthRes
   return handleAuthResponse(res);
 }
 
-export async function registerByPhone(phone: string, code: string, password: string, displayName?: string): Promise<AuthResponse> {
+export async function registerByPhone(phone: string, code: string, password: string, displayName?: string, inviteCode?: string): Promise<AuthResponse> {
+  const body: Record<string, unknown> = { phone, code, password, display_name: displayName, app: AUTH_APP };
+  if (inviteCode) body.invite_code = inviteCode;
   const res = await fetch(`${AUTH_BASE}/api/auth/register/phone`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ phone, code, password, display_name: displayName, app: AUTH_APP }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) return throwAuthError(res, '注册失败');
   return handleAuthResponse(res);
@@ -789,13 +793,16 @@ export async function fetchBookSummariesPaginated(
   });
   if (opts.sort_by) params.set('sort_by', opts.sort_by);
   if (opts.sort_dir) params.set('sort_dir', opts.sort_dir);
+  if (opts.search) params.set('search', opts.search);
   const res = await fetch(`${API_BASE}/api/books/summary?${params}`, { cache: 'no-store' });
   if (!res.ok) throw new Error('Failed to fetch book summaries');
   return res.json();
 }
 
 export async function fetchBookCount(search?: string): Promise<number> {
-  const res = await fetch(`${API_BASE}/api/books/count`, { cache: 'no-store' });
+  const params = new URLSearchParams();
+  if (search) params.set('search', search);
+  const res = await fetch(`${API_BASE}/api/books/summary/count?${params}`, { cache: 'no-store' });
   if (!res.ok) throw new Error('Failed to fetch book count');
   const data = await res.json();
   return data.count;
@@ -959,8 +966,9 @@ export async function registerWithEmail(
   password: string,
   displayName?: string,
   emailCode?: string,
+  inviteCode?: string,
 ): Promise<AuthResponse> {
-  return register(email, password, displayName, emailCode);
+  return register(email, password, displayName, emailCode, inviteCode);
 }
 
 export async function registerWithPhone(
@@ -968,6 +976,185 @@ export async function registerWithPhone(
   code: string,
   password: string,
   displayName?: string,
+  inviteCode?: string,
 ): Promise<AuthResponse> {
-  return registerByPhone(phone, code, password, displayName);
+  return registerByPhone(phone, code, password, displayName, inviteCode);
+}
+
+// --- Lecture Catalog ---
+
+export interface CatalogLecture {
+  id: number;
+  schmidt_number: string | null;
+  lecture_date: string | null;
+  location_code: string | null;
+  location_name: string | null;
+  ga_number: string | null;
+  year: number | null;
+  is_collected: boolean;
+  is_lecture_matched: boolean;
+  matched_book_id: number | null;
+  matched_lecture_id: number | null;
+}
+
+export interface CatalogLectureList {
+  total: number;
+  page: number;
+  page_size: number;
+  items: CatalogLecture[];
+}
+
+export interface CatalogStats {
+  total: number;
+  collected: number;
+  lecture_matched: number;
+  year_range: number[];
+  by_year: Record<string, number>;
+  by_location: { code: string; name: string; count: number }[];
+  by_decade: Record<string, number>;
+}
+
+export interface CatalogLocation {
+  code: string;
+  full_name: string;
+  lecture_count: number;
+}
+
+export async function getCatalogLectures(params: {
+  year?: number;
+  year_from?: number;
+  year_to?: number;
+  location_code?: string;
+  ga_number?: string;
+  is_collected?: boolean;
+  is_lecture_matched?: boolean;
+  page?: number;
+  page_size?: number;
+}): Promise<CatalogLectureList> {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') query.set(k, String(v));
+  });
+  const res = await fetch(`${API_BASE}/api/catalog/lectures?${query}`);
+  if (!res.ok) throw new Error('获取讲座目录失败');
+  return res.json();
+}
+
+export async function getCatalogStats(): Promise<CatalogStats> {
+  const res = await fetch(`${API_BASE}/api/catalog/stats`);
+  if (!res.ok) throw new Error('获取统计信息失败');
+  return res.json();
+}
+
+export async function getCatalogLocations(): Promise<CatalogLocation[]> {
+  const res = await fetch(`${API_BASE}/api/catalog/locations`);
+  if (!res.ok) throw new Error('获取地点列表失败');
+  return res.json();
+}
+
+// --- Recharge Code ---
+
+export interface RechargeCodeItem {
+  id: number;
+  code: string;
+  credits: number;
+  expires_at: string | null;
+  created_by: string;
+  used_by: string | null;
+  used_at: string | null;
+  status: string;
+  batch_id: string | null;
+  created_at: string;
+}
+
+export interface RechargeCodeList {
+  total: number;
+  page: number;
+  page_size: number;
+  items: RechargeCodeItem[];
+}
+
+export async function generateRechargeCodes(
+  credits: number,
+  count: number,
+  expiresAt?: string,
+): Promise<{ batch_id: string; codes: string[]; count: number; credits_per_code: number }> {
+  const body: Record<string, unknown> = { credits, count };
+  if (expiresAt) body.expires_at = expiresAt;
+  const res = await authFetch('/api/recharge/admin/generate-codes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '生成充值码失败' }));
+    throw new Error(err.detail || '生成充值码失败');
+  }
+  return res.json();
+}
+
+export async function listRechargeCodes(
+  params: { status?: string; batch_id?: string; page?: number; page_size?: number } = {},
+): Promise<RechargeCodeList> {
+  const qs = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') qs.set(k, String(v));
+  });
+  const res = await authFetch(`/api/recharge/admin/codes?${qs}`, { cache: 'no-store' });
+  if (!res.ok) throw new Error('获取充值码列表失败');
+  return res.json();
+}
+
+export async function redeemRechargeCode(
+  code: string,
+): Promise<{ success: boolean; credits_added: number; message: string }> {
+  const res = await authFetch('/api/recharge/redeem', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '兑换失败' }));
+    throw new Error(err.detail || '兑换失败');
+  }
+  return res.json();
+}
+
+// --- Invite Code ---
+
+export interface InviteCodeItem {
+  id: number;
+  code: string;
+  owner_id: string;
+  credits: number;
+  used_by: string | null;
+  used_at: string | null;
+  status: string;
+  created_at: string;
+}
+
+export interface MyInviteCodes {
+  quota: number;
+  used: number;
+  remaining: number;
+  codes: InviteCodeItem[];
+}
+
+export async function generateInviteCode(): Promise<{
+  code: string;
+  credits: number;
+  remaining_quota: number;
+}> {
+  const res = await authFetch('/api/invite/generate', { method: 'POST' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '生成邀请码失败' }));
+    throw new Error(err.detail || '生成邀请码失败');
+  }
+  return res.json();
+}
+
+export async function getMyInviteCodes(): Promise<MyInviteCodes> {
+  const res = await authFetch('/api/invite/my-codes', { cache: 'no-store' });
+  if (!res.ok) throw new Error('获取邀请码失败');
+  return res.json();
 }

@@ -43,10 +43,12 @@ export default function LoginPage() {
   const [regPhonePwd, setRegPhonePwd] = useState('');
   const [regPhoneConfirm, setRegPhoneConfirm] = useState('');
   const [regPhoneDisplayName, setRegPhoneDisplayName] = useState('');
+  const [regInviteCode, setRegInviteCode] = useState('');
 
   const switchView = (v: View) => {
     setView(v);
     setError('');
+    setRegInviteCode('');
   };
 
   const switchLoginTab = (t: LoginTab) => {
@@ -107,7 +109,7 @@ export default function LoginPage() {
     }
     setLoading(true);
     try {
-      await registerWithEmail(regEmail, regEmailPwd, regDisplayName || undefined, regEmailCode);
+      await registerWithEmail(regEmail, regEmailPwd, regDisplayName || undefined, regEmailCode, regInviteCode || undefined);
       window.dispatchEvent(new Event('auth-changed'));
       router.push('/');
       router.refresh();
@@ -135,7 +137,7 @@ export default function LoginPage() {
     }
     setLoading(true);
     try {
-      await registerWithPhone(regPhone, regPhoneCode, regPhonePwd, regPhoneDisplayName || undefined);
+      await registerWithPhone(regPhone, regPhoneCode, regPhonePwd, regPhoneDisplayName || undefined, regInviteCode || undefined);
       window.dispatchEvent(new Event('auth-changed'));
       router.push('/');
       router.refresh();
@@ -319,6 +321,16 @@ export default function LoginPage() {
                       className={inputCls}
                     />
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600 mb-1">邀请码（可选）</label>
+                    <input
+                      type="text"
+                      value={regInviteCode}
+                      onChange={e => setRegInviteCode(e.target.value.toUpperCase())}
+                      placeholder="邀请码（可选）"
+                      className={inputCls}
+                    />
+                  </div>
                   <button type="submit" disabled={loading} className="btn-primary w-full">
                     {loading ? '处理中...' : '注册'}
                   </button>
@@ -364,6 +376,16 @@ export default function LoginPage() {
                       value={regPhoneDisplayName}
                       onChange={e => setRegPhoneDisplayName(e.target.value)}
                       placeholder="输入昵称"
+                      className={inputCls}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600 mb-1">邀请码（可选）</label>
+                    <input
+                      type="text"
+                      value={regInviteCode}
+                      onChange={e => setRegInviteCode(e.target.value.toUpperCase())}
+                      placeholder="邀请码（可选）"
                       className={inputCls}
                     />
                   </div>

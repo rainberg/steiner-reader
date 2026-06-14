@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getStoredUser, User } from "@/lib/api";
+import { getStoredUser, User, redeemRechargeCode, fetchMe, updateStoredCredits } from "@/lib/api";
 
 const API_BASE = "";
 
@@ -23,6 +23,10 @@ export default function RechargePage() {
     status: string; admin_note: string | null;
     created_at: string; updated_at: string | null;
   }>>([]);
+  const [redeemCode, setRedeemCode] = useState("");
+  const [redeemLoading, setRedeemLoading] = useState(false);
+  const [redeemMsg, setRedeemMsg] = useState("");
+  const [redeemError, setRedeemError] = useState("");
 
   useEffect(() => {
     const u = getStoredUser();
@@ -97,11 +101,52 @@ export default function RechargePage() {
   const statusLabel = (s: string) =>
     s === "pending" ? "待审核" : s === "approved" ? "已通过" : "已拒绝";
 
+  const handleRedeem = async () => {
+    setRedeemError("");
+    setRedeemMsg("");
+    if (!redeemCode.trim()) return;
+    setRedeemLoading(true);
+    try {
+      const data = await redeemRechargeCode(redeemCode.trim());
+      setRedeemMsg(data.message);
+      setRedeemCode("");
+      const updatedUser = await fetchMe();
+      updateStoredCredits(updatedUser.credits);
+    } catch (err: any) {
+      setRedeemError(err.message || "兑换失败");
+    } finally {
+      setRedeemLoading(false);
+    }
+  };
+
   return (
     <div className="max-w-2xl mx-auto px-4 py-8">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-bold text-gray-900">充值申请</h1>
         <Link href="/" className="text-sm text-blue-500 hover:text-blue-600">返回首页</Link>
+      </div>
+
+      {/* Redeem Code */}
+      <div className="card p-6 mb-6">
+        <h2 className="text-sm font-medium text-gray-700 mb-4">兑换充值码</h2>
+        {redeemMsg && <div className="bg-green-50 text-green-600 text-sm px-3 py-2 rounded-lg mb-4">{redeemMsg}</div>}
+        {redeemError && <div className="bg-red-50 text-red-600 text-sm px-3 py-2 rounded-lg mb-4">{redeemError}</div>}
+        <div className="flex gap-3">
+          <input
+            type="text"
+            value={redeemCode}
+            onChange={e => setRedeemCode(e.target.value.toUpperCase())}
+            placeholder="请输入充值码（如 A3K9-XM7P-QW2T）"
+            className="flex-1 px-3 py-2.5 border border-gray-200 rounded-lg text-sm tracking-wider"
+          />
+          <button
+            onClick={handleRedeem}
+            disabled={redeemLoading || !redeemCode.trim()}
+            className="btn-primary !px-6 whitespace-nowrap"
+          >
+            {redeemLoading ? "兑换中..." : "兑换"}
+          </button>
+        </div>
       </div>
 
       {/* QR Code */}

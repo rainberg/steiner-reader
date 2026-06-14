@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { clearAuth, fetchMe, getStoredUser, updateStoredCredits, User } from '@/lib/api';
-import SearchModal from './SearchModal';
 
 export default function Header() {
   const router = useRouter();
@@ -95,7 +94,6 @@ export default function Header() {
         <div className="flex items-center gap-3">
           {user ? (
             <>
-              <SearchModal />
               <Link href="/recharge" className="text-sm text-gray-500 hover:text-indigo-600 transition-colors px-2">
                 充值
               </Link>

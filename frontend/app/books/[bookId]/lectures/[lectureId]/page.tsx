@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   fetchLecture,
@@ -130,6 +130,23 @@ export default function LecturePage() {
     };
   }, [loadLecture]);
 
+  const searchParams = useSearchParams();
+  const highlightId = searchParams.get('highlight');
+
+  useEffect(() => {
+    if (highlightId && paragraphs.length > 0) {
+      const timer = setTimeout(() => {
+        const el = document.getElementById(`sentence-${highlightId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el.classList.add('highlight-flash');
+          setTimeout(() => el.classList.remove('highlight-flash'), 3000);
+        }
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [highlightId, paragraphs]);
+
   const handleTranslate = async () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
     if (!token) {
@@ -248,10 +265,10 @@ export default function LecturePage() {
                   key={nextMode}
                   type="button"
                   onClick={() => setMode(nextMode)}
-                  disabled={(nextMode === 'de-zh' || nextMode === 'zh-only') && !isPublished && translatedSentences === 0}
+                  disabled={(nextMode === 'de-zh' || nextMode === 'zh-only') && !allTranslated && translatedSentences === 0}
                   className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
                     mode === nextMode ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-700'
-                  } ${((nextMode === 'de-zh' || nextMode === 'zh-only') && !isPublished && translatedSentences === 0) ? 'opacity-40 cursor-not-allowed' : ''}`}
+                  } ${((nextMode === 'de-zh' || nextMode === 'zh-only') && !allTranslated && translatedSentences === 0) ? 'opacity-40 cursor-not-allowed' : ''}`}
                 >
                   {nextMode === 'de-zh' ? '德中' : nextMode === 'de-only' ? '德语' : '中文'}
                 </button>
@@ -277,15 +294,16 @@ export default function LecturePage() {
             {lecture.lecture_date && <span>{lecture.lecture_date}</span>}
             <span>{paragraphs.length} 段</span>
             <span>{translatedSentences}/{totalSentences} 已译</span>
-            {isPublished && <span className="text-emerald-600 font-medium">译文已公开</span>}
+            {isPublished && allTranslated && <span className="text-emerald-600 font-medium">译文已公开</span>}
+            {!allTranslated && translatedSentences > 0 && <span className="text-amber-500 font-medium">翻译未完成</span>}
           </div>
         </div>
 
-        {/* Not published: show translate card */}
-        {!isPublished && !translating && (
+        {/* Not fully translated: show translate card */}
+        {!allTranslated && !translating && (
           <div className="mb-6 bg-gradient-to-r from-blue-50 to-emerald-50 rounded-xl p-5 border border-blue-100/50 text-center">
             <p className="text-slate-600 text-sm mb-2">
-              {translatedSentences === 0 ? '本章译文尚未公开' : `数据库中已有 ${translatedSentences}/${totalSentences} 句译文，但尚未公开`}
+              {translatedSentences === 0 ? '本章尚无译文' : `已翻译 ${translatedSentences}/${totalSentences} 句，翻译尚未完成`}
             </p>
             <p className="text-slate-500 text-xs mb-3">贡献点数翻译本讲后，译文将对所有用户可见</p>
             {token ? (
@@ -560,7 +578,7 @@ function SentenceView({
   }
 
   return (
-    <div className="flex items-start gap-2 group" onDoubleClick={onToggle}>
+    <div id={`sentence-${sentence.id}`} className="flex items-start gap-2 group" onDoubleClick={onToggle}>
       <span className="text-xs text-slate-300 font-mono shrink-0 min-w-[3rem] text-right select-none">§{paragraphIndex}.{index}</span>
       <div className="flex-1 mb-3">
         {sentence.image_url && <ImageView url={sentence.image_url} />}

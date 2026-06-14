@@ -8,10 +8,11 @@ import {
   changePassword, changeEmail, changeUsername,
   fetchMyTransactions, CreditTransaction,
   bindPhone, bindEmail, unbindPhone, unbindEmail, deleteAccount,
+  generateInviteCode, getMyInviteCodes, InviteCodeItem,
 } from '@/lib/api';
 import { SmsCodeInput, EmailCodeInput } from '@/app/components/SmsVerification';
 
-type TabKey = 'info' | 'security' | 'binding' | 'credits' | 'account';
+type TabKey = 'info' | 'security' | 'binding' | 'credits' | 'invite' | 'account';
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'info', label: '个人信息' },
@@ -479,6 +480,10 @@ export default function ProfilePage() {
         </div>
       )}
 
+      {activeTab === 'invite' && (
+        <InviteTab />
+      )}
+
       {activeTab === 'account' && (
         <div className="space-y-6">
           <div className="card p-6">
@@ -530,6 +535,89 @@ export default function ProfilePage() {
               </div>
             )}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InviteTab() {
+  const [data, setData] = useState<{ quota: number; used: number; remaining: number; codes: InviteCodeItem[] } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [genLoading, setGenLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [copied, setCopied] = useState('');
+
+  const load = () => {
+    setLoading(true);
+    getMyInviteCodes().then(setData).catch(() => {}).finally(() => setLoading(false));
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const handleGenerate = async () => {
+    setGenLoading(true);
+    setError('');
+    try {
+      await generateInviteCode();
+      load();
+    } catch (err: any) {
+      setError(err.message || '生成失败');
+    } finally {
+      setGenLoading(false);
+    }
+  };
+
+  const handleCopy = (code: string) => {
+    navigator.clipboard.writeText(code);
+    setCopied(code);
+    setTimeout(() => setCopied(''), 2000);
+  };
+
+  if (loading) return <div className="text-center py-8 text-gray-400">加载中...</div>;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <span className="text-sm text-gray-600">配额：{data?.used || 0}/{data?.quota || 0} 已使用</span>
+        </div>
+        <button
+          onClick={handleGenerate}
+          disabled={genLoading || (data?.remaining ?? 0) <= 0}
+          className="px-4 py-1.5 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700 disabled:opacity-50"
+        >
+          {genLoading ? "生成中..." : "生成邀请码"}
+        </button>
+      </div>
+
+      {error && <div className="mb-4 p-2 bg-red-50 text-red-600 rounded text-sm">{error}</div>}
+
+      {!data?.codes.length ? (
+        <div className="text-center py-8 text-gray-400">暂无邀请码</div>
+      ) : (
+        <div className="space-y-3">
+          {data.codes.map(c => (
+            <div key={c.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+              <div>
+                <span className="font-mono text-sm tracking-wider">{c.code}</span>
+                <span className="ml-2 text-xs text-gray-400">{c.credits} 积分</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {c.status === 'active' ? (
+                  <>
+                    <span className="text-xs text-green-600">未使用</span>
+                    <button onClick={() => handleCopy(c.code)}
+                      className="px-2 py-0.5 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700">
+                      {copied === c.code ? '已复制' : '复制'}
+                    </button>
+                  </>
+                ) : (
+                  <span className="text-xs text-gray-400">已使用</span>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>

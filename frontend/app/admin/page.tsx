@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { adminAddCredits, adminUpdateUser, adminResetPassword, fetchCreditSettings, updateCreditSetting, CreditSetting } from "@/lib/api";
+import { adminAddCredits, adminUpdateUser, adminResetPassword, fetchCreditSettings, updateCreditSetting, CreditSetting, generateRechargeCodes, listRechargeCodes, RechargeCodeItem } from "@/lib/api";
 
 interface User {
   id: string;
@@ -30,7 +30,7 @@ export default function AdminPage() {
   const [editUsername, setEditUsername] = useState("");
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<"users" | "settings" | "recharge" | "upload" | "fixes" | "books">("users");
+  const [activeTab, setActiveTab] = useState<"users" | "settings" | "recharge" | "codes" | "upload" | "fixes" | "books">("users");
   const [creditSettings, setCreditSettings] = useState<CreditSetting[]>([]);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [editEmail, setEditEmail] = useState("");
@@ -252,6 +252,14 @@ export default function AdminPage() {
             }`}
           >
             充值审核
+          </button>
+          <button
+            onClick={() => setActiveTab("codes")}
+            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition ${
+              activeTab === "codes" ? "bg-white text-blue-600 border border-b-white border-gray-200 -mb-px" : "text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            充值码
           </button>
           <button
             onClick={() => setActiveTab("upload")}
@@ -558,6 +566,8 @@ export default function AdminPage() {
       />
       ) : activeTab === "recharge" ? (
       <RechargeReviewTab />
+      ) : activeTab === "codes" ? (
+      <RechargeCodesTab />
       ) : activeTab === "fixes" ? (
       <TranslationFixesTab />
       ) : activeTab === "books" ? (
@@ -1019,4 +1029,167 @@ function BooksManageTab() {
       </div>))}
     </div></div></div>
   </div>);
+}
+
+function RechargeCodesTab() {
+  const [codes, setCodes] = useState<RechargeCodeItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [loading, setLoading] = useState(true);
+  const [genCredits, setGenCredits] = useState("100");
+  const [genCount, setGenCount] = useState("10");
+  const [genExpires, setGenExpires] = useState("");
+  const [genLoading, setGenLoading] = useState(false);
+  const [genResult, setGenResult] = useState<{ batch_id: string; codes: string[]; credits_per_code: number } | null>(null);
+  const [msg, setMsg] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  const loadCodes = (p: number = page, s: string = statusFilter) => {
+    setLoading(true);
+    listRechargeCodes({ status: s === "all" ? undefined : s, page: p, page_size: 20 })
+      .then(data => { setCodes(data.items); setTotal(data.total); setPage(p); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { loadCodes(1); }, []);
+
+  const handleGenerate = async () => {
+    const credits = parseInt(genCredits, 10);
+    const count = parseInt(genCount, 10);
+    if (!credits || credits < 1) { setMsg("请输入有效积分值"); return; }
+    if (!count || count < 1 || count > 100) { setMsg("生成数量需在1-100之间"); return; }
+    setGenLoading(true);
+    setMsg("");
+    try {
+      const result = await generateRechargeCodes(credits, count, genExpires || undefined);
+      setGenResult(result);
+      loadCodes(1);
+    } catch (err: any) {
+      setMsg(err.message || "生成失败");
+    } finally {
+      setGenLoading(false);
+    }
+  };
+
+  const handleCopyAll = () => {
+    if (!genResult) return;
+    navigator.clipboard.writeText(genResult.codes.join("\n"));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const statusBadge = (s: string) => {
+    const c = s === "active" ? "bg-green-50 text-green-700" :
+              s === "used" ? "bg-gray-100 text-gray-500" : "bg-red-50 text-red-600";
+    const t = s === "active" ? "未使用" : s === "used" ? "已使用" : "已过期";
+    return <span className={`px-2 py-0.5 rounded text-xs font-medium ${c}`}>{t}</span>;
+  };
+
+  return (
+    <div>
+      {msg && <div className="mb-4 p-2 bg-green-50 text-green-700 rounded text-sm">{msg}</div>}
+
+      <div className="mb-6 bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+        <h3 className="text-sm font-medium text-gray-800 mb-3">生成充值码</h3>
+        <div className="flex flex-wrap gap-3 items-end">
+          <div>
+            <label className="text-xs text-gray-500">积分值</label>
+            <input type="number" value={genCredits} onChange={e => setGenCredits(e.target.value)}
+              className="w-24 px-2 py-1.5 border rounded text-sm" min={1} />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500">数量</label>
+            <input type="number" value={genCount} onChange={e => setGenCount(e.target.value)}
+              className="w-20 px-2 py-1.5 border rounded text-sm" min={1} max={100} />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500">过期时间（可选）</label>
+            <input type="datetime-local" value={genExpires} onChange={e => setGenExpires(e.target.value)}
+              className="px-2 py-1.5 border rounded text-sm" />
+          </div>
+          <button onClick={handleGenerate} disabled={genLoading}
+            className="px-4 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50">
+            {genLoading ? "生成中..." : "生成"}
+          </button>
+        </div>
+
+        {genResult && (
+          <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-gray-700">
+                已生成 {genResult.codes.length} 个充值码（每个 {genResult.credits_per_code} 积分）
+              </span>
+              <button onClick={handleCopyAll}
+                className="px-3 py-1 bg-indigo-600 text-white text-xs rounded hover:bg-indigo-700">
+                {copied ? "已复制" : "一键复制"}
+              </button>
+            </div>
+            <div className="max-h-40 overflow-y-auto space-y-1">
+              {genResult.codes.map((c, i) => (
+                <div key={i} className="text-sm font-mono text-gray-600">{c}</div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="flex gap-2 mb-4">
+        {["all", "active", "used", "expired"].map(s => (
+          <button key={s} onClick={() => { setStatusFilter(s); loadCodes(1, s); }}
+            className={`px-3 py-1 text-sm rounded-lg ${
+              statusFilter === s ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }`}>
+            {s === "all" ? "全部" : s === "active" ? "未使用" : s === "used" ? "已使用" : "已过期"}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="text-center py-8 text-gray-400">加载中...</div>
+      ) : (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">充值码</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">积分</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">状态</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">使用者</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">过期时间</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">创建时间</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {codes.map(c => (
+                <tr key={c.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-3 text-sm font-mono tracking-wider">{c.code}</td>
+                  <td className="px-4 py-3 text-sm font-medium">{c.credits}</td>
+                  <td className="px-4 py-3">{statusBadge(c.status)}</td>
+                  <td className="px-4 py-3 text-sm text-gray-500">{c.used_by ? c.used_by.slice(0, 8) + "..." : "-"}</td>
+                  <td className="px-4 py-3 text-xs text-gray-400">
+                    {c.expires_at ? new Date(c.expires_at).toLocaleDateString("zh-CN") : "永久"}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-gray-400">
+                    {new Date(c.created_at).toLocaleDateString("zh-CN")}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="flex justify-center gap-2 mt-4">
+        {page > 1 && (
+          <button onClick={() => loadCodes(page - 1)} className="px-3 py-1 text-sm bg-gray-100 rounded hover:bg-gray-200">上一页</button>
+        )}
+        <span className="text-sm text-gray-500 py-1">共 {total} 条</span>
+        {codes.length === 20 && (
+          <button onClick={() => loadCodes(page + 1)} className="px-3 py-1 text-sm bg-gray-100 rounded hover:bg-gray-200">下一页</button>
+        )}
+      </div>
+    </div>
+  );
 }

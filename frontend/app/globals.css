@@ -126,3 +126,12 @@ body {
   background-size: 200% 100%;
   animation: shimmer 2s infinite;
 }
+
+.highlight-flash {
+  animation: highlight-fade 3s ease-out;
+}
+
+@keyframes highlight-fade {
+  0% { background-color: #fef08a; }
+  100% { background-color: transparent; }
+}
