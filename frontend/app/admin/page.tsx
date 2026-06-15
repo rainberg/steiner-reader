@@ -350,7 +350,6 @@ export default function AdminPage() {
                         </span>
                       )}
                     </div>
-                    <div className="text-sm text-gray-500">ID: {user.id}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {user.email}
@@ -608,6 +607,8 @@ function CreditSettingsTab({
     edit_source_coefficient: "编辑原文系数 (每句×系数)",
     download_book_price: "全书下载 (0=免费)",
     recharge_coefficient: "充值兑换系数 (1元=积分)",
+    invite_codes_per_user: "每人可生成的邀请码数量",
+    invite_credits: "邀请码注册奖励积分",
   };
 
   const handleSave = async (settingId: number) => {

@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   registerWithEmail,
@@ -19,7 +19,16 @@ const inputCls =
   'w-full px-3 py-2.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300 transition-all';
 
 export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginContent />
+    </Suspense>
+  );
+}
+
+function LoginContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [view, setView] = useState<View>('login');
   const [loginTab, setLoginTab] = useState<LoginTab>('password');
   const [regSub, setRegSub] = useState<RegisterSub>('email');
@@ -44,6 +53,15 @@ export default function LoginPage() {
   const [regPhoneConfirm, setRegPhoneConfirm] = useState('');
   const [regPhoneDisplayName, setRegPhoneDisplayName] = useState('');
   const [regInviteCode, setRegInviteCode] = useState('');
+
+  // Auto-fill invite code from URL and switch to register view
+  useEffect(() => {
+    const invite = searchParams.get('invite');
+    if (invite) {
+      setRegInviteCode(invite.toUpperCase());
+      setView('register');
+    }
+  }, [searchParams]);
 
   const switchView = (v: View) => {
     setView(v);

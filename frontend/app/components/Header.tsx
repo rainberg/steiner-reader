@@ -92,6 +92,9 @@ export default function Header() {
         </Link>
 
         <div className="flex items-center gap-3">
+          <Link href="/" className="text-sm text-gray-500 hover:text-indigo-600 transition-colors px-2">
+            首页
+          </Link>
           {user ? (
             <>
               <Link href="/recharge" className="text-sm text-gray-500 hover:text-indigo-600 transition-colors px-2">

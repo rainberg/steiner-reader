@@ -19,6 +19,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'security', label: '安全设置' },
   { key: 'binding', label: '绑定管理' },
   { key: 'credits', label: '积分记录' },
+  { key: 'invite', label: '邀请码' },
   { key: 'account', label: '账户' },
 ];
 
@@ -569,7 +570,8 @@ function InviteTab() {
   };
 
   const handleCopy = (code: string) => {
-    navigator.clipboard.writeText(code);
+    const link = `${window.location.origin}/login?invite=${code}`;
+    navigator.clipboard.writeText(link);
     setCopied(code);
     setTimeout(() => setCopied(''), 2000);
   };
@@ -609,7 +611,7 @@ function InviteTab() {
                     <span className="text-xs text-green-600">未使用</span>
                     <button onClick={() => handleCopy(c.code)}
                       className="px-2 py-0.5 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700">
-                      {copied === c.code ? '已复制' : '复制'}
+                      {copied === c.code ? '已复制链接' : '复制链接'}
                     </button>
                   </>
                 ) : (
