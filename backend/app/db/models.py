@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Date, Boolean, Numeric
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
 from app.db.database import Base
@@ -305,3 +306,17 @@ class UserTranslationJob(Base):
 
     lecture = relationship("Lecture", foreign_keys=[lecture_id])
     book = relationship("Book", foreign_keys=[book_id])
+
+
+class CompletenessCheck(Base):
+    __tablename__ = "completeness_checks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ga_number = Column(String(20), index=True)
+    book_id = Column(Integer, ForeignKey("books.id", ondelete="CASCADE"), nullable=True)
+    lecture_id = Column(Integer, ForeignKey("lectures.id", ondelete="CASCADE"), nullable=True)
+    check_type = Column(String(30), nullable=False, index=True)
+    severity = Column(String(10), nullable=False)
+    message = Column(Text, nullable=False)
+    detail = Column(JSONB, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)

@@ -258,7 +258,12 @@ export default function LecturesCatalogPage() {
               </h2>
               <div className="space-y-1">
                 {yearGroups[year].map(lecture => {
-                  const isClickable = lecture.is_collected && lecture.matched_book_id;
+                  const href = lecture.is_lecture_matched && lecture.matched_lecture_id && lecture.matched_book_id
+                    ? `/books/${lecture.matched_book_id}/lectures/${lecture.matched_lecture_id}`
+                    : lecture.is_collected && lecture.matched_book_id
+                      ? `/books/${lecture.matched_book_id}`
+                      : null;
+                  const isClickable = href !== null;
                   const statusColor = lecture.is_collected
                     ? lecture.is_lecture_matched
                       ? 'bg-blue-500'
@@ -314,7 +319,7 @@ export default function LecturesCatalogPage() {
                   );
 
                   return isClickable ? (
-                    <Link key={lecture.id} href={`/books/${lecture.matched_book_id}`} className="block group">
+                    <Link key={lecture.id} href={href!} className="block group">
                       {row}
                     </Link>
                   ) : (

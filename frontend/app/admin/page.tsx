@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { adminAddCredits, adminUpdateUser, adminResetPassword, fetchCreditSettings, updateCreditSetting, CreditSetting, generateRechargeCodes, listRechargeCodes, RechargeCodeItem } from "@/lib/api";
+import { adminAddCredits, adminUpdateUser, adminResetPassword, fetchCreditSettings, updateCreditSetting, CreditSetting, generateRechargeCodes, listRechargeCodes, RechargeCodeItem, getCompletenessSummary, getCompletenessIssues, runCompletenessCheck, getCompletenessStatus, CompletenessSummary, CompletenessIssue, CheckStatus } from "@/lib/api";
 
 interface User {
   id: string;
@@ -30,7 +30,7 @@ export default function AdminPage() {
   const [editUsername, setEditUsername] = useState("");
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<"users" | "settings" | "recharge" | "codes" | "upload" | "fixes" | "books">("users");
+  const [activeTab, setActiveTab] = useState<"users" | "settings" | "recharge" | "codes" | "upload" | "fixes" | "books" | "completeness">("users");
   const [creditSettings, setCreditSettings] = useState<CreditSetting[]>([]);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [editEmail, setEditEmail] = useState("");
@@ -284,6 +284,14 @@ export default function AdminPage() {
             }`}
           >
             书籍管理
+          </button>
+          <button
+            onClick={() => setActiveTab("completeness")}
+            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition ${
+              activeTab === "completeness" ? "bg-white text-blue-600 border border-b-white border-gray-200 -mb-px" : "text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            数据完整性
           </button>
         </div>
       </div>
@@ -571,6 +579,8 @@ export default function AdminPage() {
       <TranslationFixesTab />
       ) : activeTab === "books" ? (
       <BooksManageTab />
+      ) : activeTab === "completeness" ? (
+      <CompletenessTab />
       ) : (
       <UploadTab />
       )}
@@ -1191,6 +1201,279 @@ function RechargeCodesTab() {
           <button onClick={() => loadCodes(page + 1)} className="px-3 py-1 text-sm bg-gray-100 rounded hover:bg-gray-200">下一页</button>
         )}
       </div>
+    </div>
+  );
+}
+
+function CompletenessTab() {
+  const [summary, setSummary] = useState<CompletenessSummary | null>(null);
+  const [issues, setIssues] = useState<CompletenessIssue[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [checkStatus, setCheckStatus] = useState<CheckStatus | null>(null);
+  const [severityFilter, setSeverityFilter] = useState<string>("");
+  const [typeFilter, setTypeFilter] = useState<string>("");
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [msg, setMsg] = useState("");
+
+  const loadSummary = () => {
+    getCompletenessSummary()
+      .then(setSummary)
+      .catch(() => {});
+  };
+
+  const loadIssues = (p: number = page, sev: string = severityFilter, typ: string = typeFilter) => {
+    getCompletenessIssues({
+      page: p,
+      page_size: 20,
+      severity: sev || undefined,
+      check_type: typ || undefined,
+    })
+      .then(data => {
+        setIssues(data.items);
+        setTotal(data.total);
+        setPage(p);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+
+  const loadStatus = () => {
+    getCompletenessStatus()
+      .then(setCheckStatus)
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    loadSummary();
+    loadIssues(1);
+    loadStatus();
+  }, []);
+
+  // Poll status while running
+  useEffect(() => {
+    if (!checkStatus?.running) return;
+    const interval = setInterval(() => {
+      loadStatus();
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [checkStatus?.running]);
+
+  // Reload when check finishes
+  useEffect(() => {
+    if (checkStatus && !checkStatus.running && checkStatus.finished_at) {
+      loadSummary();
+      loadIssues(1, severityFilter, typeFilter);
+    }
+  }, [checkStatus?.running]);
+
+  const handleRunCheck = async () => {
+    try {
+      await runCompletenessCheck();
+      setMsg("完整性检查已启动");
+      loadStatus();
+    } catch (err: any) {
+      setMsg(err.message || "启动失败");
+    }
+  };
+
+  const severityBadge = (s: string) => {
+    const c = s === "error" ? "bg-red-50 text-red-700" :
+              s === "warning" ? "bg-yellow-50 text-yellow-700" : "bg-blue-50 text-blue-700";
+    const t = s === "error" ? "错误" : s === "warning" ? "警告" : "信息";
+    return <span className={`px-2 py-0.5 rounded text-xs font-medium ${c}`}>{t}</span>;
+  };
+
+  const typeLabel: Record<string, string> = {
+    empty_lecture: "空讲座",
+    empty_book: "空书籍",
+    content_count: "内容数量",
+    text_truncation: "文本截断",
+    missing_content: "缺失内容",
+    pdf_analysis: "PDF分析",
+  };
+
+  return (
+    <div>
+      {msg && <div className="mb-4 p-2 bg-green-50 text-green-700 rounded text-sm">{msg}</div>}
+
+      {/* Summary Cards */}
+      {summary && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+            <div className="text-2xl font-bold text-gray-900">{summary.total_issues}</div>
+            <div className="text-sm text-gray-500">问题总数</div>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+            <div className="text-2xl font-bold text-red-600">{summary.by_severity.error || 0}</div>
+            <div className="text-sm text-gray-500">错误</div>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+            <div className="text-2xl font-bold text-yellow-600">{summary.by_severity.warning || 0}</div>
+            <div className="text-sm text-gray-500">警告</div>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+            <div className="text-2xl font-bold text-blue-600">{summary.by_severity.info || 0}</div>
+            <div className="text-sm text-gray-500">信息</div>
+          </div>
+        </div>
+      )}
+
+      {/* Run Check Button & Status */}
+      <div className="mb-6 bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-medium text-gray-800">完整性检查</h3>
+            <p className="text-xs text-gray-500 mt-1">
+              {summary?.last_check
+                ? `上次检查: ${new Date(summary.last_check).toLocaleString("zh-CN")}`
+                : "尚未运行过检查"}
+            </p>
+          </div>
+          <button
+            onClick={handleRunCheck}
+            disabled={checkStatus?.running}
+            className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {checkStatus?.running ? "检查中..." : "运行检查"}
+          </button>
+        </div>
+
+        {checkStatus?.running && (
+          <div className="mt-4">
+            <div className="flex items-center justify-between text-sm text-gray-600 mb-1">
+              <span>{checkStatus.phase}</span>
+              <span>{checkStatus.progress}/{checkStatus.total}</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div
+                className="bg-blue-600 h-2 rounded-full transition-all"
+                style={{ width: checkStatus.total > 0 ? `${(checkStatus.progress / checkStatus.total) * 100}%` : "0%" }}
+              />
+            </div>
+          </div>
+        )}
+
+        {checkStatus?.error && (
+          <div className="mt-3 p-2 bg-red-50 text-red-700 rounded text-sm">
+            检查出错: {checkStatus.error}
+          </div>
+        )}
+      </div>
+
+      {/* Type breakdown */}
+      {summary && Object.keys(summary.by_type).length > 0 && (
+        <div className="mb-4 flex flex-wrap gap-2">
+          {Object.entries(summary.by_type).map(([type, count]) => (
+            <button
+              key={type}
+              onClick={() => { setTypeFilter(typeFilter === type ? "" : type); loadIssues(1, severityFilter, typeFilter === type ? "" : type); }}
+              className={`px-3 py-1 text-sm rounded-lg ${
+                typeFilter === type ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              }`}
+            >
+              {typeLabel[type] || type} ({count})
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Severity filter */}
+      <div className="mb-4 flex gap-2">
+        {["", "error", "warning", "info"].map(s => (
+          <button
+            key={s}
+            onClick={() => { setSeverityFilter(s); loadIssues(1, s, typeFilter); }}
+            className={`px-3 py-1 text-sm rounded-lg ${
+              severityFilter === s ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }`}
+          >
+            {s === "" ? "全部" : s === "error" ? "错误" : s === "warning" ? "警告" : "信息"}
+          </button>
+        ))}
+      </div>
+
+      {/* Issues list */}
+      {loading ? (
+        <div className="text-center py-8 text-gray-400">加载中...</div>
+      ) : issues.length === 0 ? (
+        <div className="text-center py-8 text-gray-400">
+          {summary?.total_issues === 0 ? "暂无问题，数据完整性良好" : "无匹配的问题"}
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">GA</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">类型</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">级别</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">描述</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-16"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {issues.map(issue => (
+                <>
+                  <tr key={issue.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setExpandedId(expandedId === issue.id ? null : issue.id)}>
+                    <td className="px-4 py-3 text-sm font-mono">{issue.ga_number || "-"}</td>
+                    <td className="px-4 py-3 text-sm">{typeLabel[issue.check_type] || issue.check_type}</td>
+                    <td className="px-4 py-3">{severityBadge(issue.severity)}</td>
+                    <td className="px-4 py-3 text-sm text-gray-700 max-w-md truncate">{issue.message}</td>
+                    <td className="px-4 py-3 text-xs text-gray-400">{expandedId === issue.id ? "▲" : "▼"}</td>
+                  </tr>
+                  {expandedId === issue.id && (
+                    <tr key={`${issue.id}-detail`}>
+                      <td colSpan={5} className="px-6 py-4 bg-gray-50">
+                        <div className="space-y-2">
+                          {issue.lecture_id && (
+                            <div className="text-sm">
+                              <span className="text-gray-500">讲座ID:</span>{" "}
+                              <a href={`/books/${issue.book_id}/lectures/${issue.lecture_id}`} className="text-blue-600 hover:underline" target="_blank">
+                                {issue.lecture_id}
+                              </a>
+                            </div>
+                          )}
+                          {issue.book_id && (
+                            <div className="text-sm">
+                              <span className="text-gray-500">书籍ID:</span>{" "}
+                              <a href={`/books/${issue.book_id}`} className="text-blue-600 hover:underline" target="_blank">
+                                {issue.book_id}
+                              </a>
+                            </div>
+                          )}
+                          {issue.detail && Object.entries(issue.detail).map(([k, v]) => (
+                            <div key={k} className="text-sm">
+                              <span className="text-gray-500">{k}:</span>{" "}
+                              <span className="text-gray-700 font-mono text-xs break-all">
+                                {typeof v === "string" ? v : JSON.stringify(v, null, 2)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Pagination */}
+      {total > 20 && (
+        <div className="flex justify-center gap-2 mt-4">
+          {page > 1 && (
+            <button onClick={() => loadIssues(page - 1)} className="px-3 py-1 text-sm bg-gray-100 rounded hover:bg-gray-200">上一页</button>
+          )}
+          <span className="text-sm text-gray-500 py-1">共 {total} 条</span>
+          {issues.length === 20 && (
+            <button onClick={() => loadIssues(page + 1)} className="px-3 py-1 text-sm bg-gray-100 rounded hover:bg-gray-200">下一页</button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

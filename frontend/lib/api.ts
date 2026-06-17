@@ -1158,3 +1158,80 @@ export async function getMyInviteCodes(): Promise<MyInviteCodes> {
   if (!res.ok) throw new Error('获取邀请码失败');
   return res.json();
 }
+
+// --- Completeness Check ---
+
+export interface CompletenessSummary {
+  total_issues: number;
+  by_severity: { error: number; warning: number; info: number };
+  by_type: Record<string, number>;
+  affected_books: number;
+  affected_lectures: number;
+  last_check: string | null;
+}
+
+export interface CompletenessIssue {
+  id: number;
+  ga_number: string | null;
+  book_id: number | null;
+  lecture_id: number | null;
+  check_type: string;
+  severity: string;
+  message: string;
+  detail: Record<string, unknown> | null;
+  created_at: string | null;
+}
+
+export interface CompletenessIssueList {
+  total: number;
+  page: number;
+  page_size: number;
+  items: CompletenessIssue[];
+}
+
+export interface CheckStatus {
+  running: boolean;
+  phase: string;
+  progress: number;
+  total: number;
+  started_at: string | null;
+  finished_at: string | null;
+  error: string | null;
+}
+
+export async function getCompletenessSummary(): Promise<CompletenessSummary> {
+  const res = await authFetch('/api/admin/completeness/summary', { cache: 'no-store' });
+  if (!res.ok) throw new Error('获取完整性摘要失败');
+  return res.json();
+}
+
+export async function getCompletenessIssues(params: {
+  severity?: string;
+  check_type?: string;
+  ga_number?: string;
+  page?: number;
+  page_size?: number;
+}): Promise<CompletenessIssueList> {
+  const qs = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') qs.set(k, String(v));
+  });
+  const res = await authFetch(`/api/admin/completeness/issues?${qs}`, { cache: 'no-store' });
+  if (!res.ok) throw new Error('获取完整性问题列表失败');
+  return res.json();
+}
+
+export async function runCompletenessCheck(): Promise<{ message: string; status: string }> {
+  const res = await authFetch('/api/admin/completeness/run', { method: 'POST' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '启动检查失败' }));
+    throw new Error(err.detail || '启动检查失败');
+  }
+  return res.json();
+}
+
+export async function getCompletenessStatus(): Promise<CheckStatus> {
+  const res = await authFetch('/api/admin/completeness/status', { cache: 'no-store' });
+  if (!res.ok) throw new Error('获取检查状态失败');
+  return res.json();
+}
