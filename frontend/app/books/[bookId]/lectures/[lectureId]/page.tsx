@@ -25,6 +25,9 @@ import {
   ContributionDisplay,
   EditLogEntry,
   updateStoredCredits,
+  fetchFavoriteStatus,
+  addFavorite,
+  removeFavorite,
 } from '@/lib/api';
 
 type ReadingMode = 'de-zh' | 'de-only' | 'zh-only';
@@ -57,6 +60,8 @@ export default function LecturePage() {
   const [editValue, setEditValue] = useState('');
   const [editMsg, setEditMsg] = useState<string | null>(null);
   const [revisionsMap, setRevisionsMap] = useState<Record<number, RevisionItem[]>>({});
+  const [isFavorited, setIsFavorited] = useState(false);
+  const [favoriteLoading, setFavoriteLoading] = useState(false);
 
   const startPolling = useCallback(() => {
     if (pollingRef.current) clearInterval(pollingRef.current);
@@ -83,6 +88,11 @@ export default function LecturePage() {
     try {
       const data = await fetchLecture(lectureId);
       setLecture(data);
+
+      // 加载收藏状态
+      fetchFavoriteStatus(lectureId)
+        .then(status => setIsFavorited(status.favorited))
+        .catch(() => {});
 
       setIsPublished(data.is_published === true);
 
@@ -122,6 +132,29 @@ export default function LecturePage() {
       setLoading(false);
     }
   }, [bookId, lectureId, startPolling]);
+
+  const handleToggleFavorite = async () => {
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+    if (favoriteLoading) return;
+    setFavoriteLoading(true);
+    const wasFavorited = isFavorited;
+    setIsFavorited(!wasFavorited); // 乐观更新
+    try {
+      if (wasFavorited) {
+        await removeFavorite(lectureId);
+      } else {
+        await addFavorite(lectureId);
+      }
+    } catch (e) {
+      setIsFavorited(wasFavorited); // 回滚
+    } finally {
+      setFavoriteLoading(false);
+    }
+  };
 
   useEffect(() => {
     loadLecture();
@@ -288,7 +321,18 @@ export default function LecturePage() {
 
       <div className="max-w-4xl mx-auto px-4 py-6">
         <div className="mb-6">
-          <h1 className="text-xl font-bold text-slate-900 leading-tight whitespace-pre-line">{lecture.title_de || 'Vortrag'}</h1>
+          <div className="flex items-start gap-3">
+            <h1 className="text-xl font-bold text-slate-900 leading-tight whitespace-pre-line flex-1">{lecture.title_de || 'Vortrag'}</h1>
+            <button
+              type="button"
+              onClick={handleToggleFavorite}
+              disabled={favoriteLoading}
+              title={isFavorited ? '取消收藏' : '收藏讲座'}
+              className="text-2xl shrink-0 leading-none mt-1 transition-transform hover:scale-110 disabled:opacity-50"
+            >
+              {isFavorited ? '★' : '☆'}
+            </button>
+          </div>
           <div className="text-sm text-slate-500 mt-1.5 flex items-center gap-3 flex-wrap">
             {lecture.location && <span>{lecture.location}</span>}
             {lecture.lecture_date && <span>{lecture.lecture_date}</span>}

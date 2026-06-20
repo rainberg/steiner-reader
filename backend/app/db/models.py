@@ -1,7 +1,7 @@
 """SQLAlchemy ORM models for Steiner Reader."""
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Date, Boolean, Numeric
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Date, Boolean, Numeric, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
@@ -320,3 +320,18 @@ class CompletenessCheck(Base):
     message = Column(Text, nullable=False)
     detail = Column(JSONB, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class UserFavorite(Base):
+    __tablename__ = "user_favorites"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(36), nullable=False, index=True)
+    lecture_id = Column(Integer, ForeignKey("lectures.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    lecture = relationship("Lecture", foreign_keys=[lecture_id])
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "lecture_id", name="uq_user_lecture_favorite"),
+    )

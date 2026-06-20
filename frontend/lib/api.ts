@@ -565,7 +565,7 @@ export async function deleteAccount(params?: { password?: string; email_code?: s
   clearAuth();
 }
 
-export async function fetchMyTransactions(page: number = 1, pageSize: number = 20) {
+export async function fetchMyTransactions(page: number = 1, pageSize: number = 20): Promise<CreditLogListResponse> {
   const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
   const res = await authServiceFetch(`/api/credits/logs?${params}`, { cache: 'no-store' });
   if (!res.ok) {
@@ -727,15 +727,21 @@ export interface CreditSetting {
 }
 
 export interface CreditTransaction {
-  id: number;
+  id: string;
   user_id: string;
+  action: string;
   amount: number;
   balance_after: number;
-  transaction_type: string;
-  reference_type: string | null;
-  reference_id: number | null;
+  reserved_after: number;
+  reference_id: string | null;
   description: string | null;
+  operator_id: string | null;
   created_at: string;
+}
+
+export interface CreditLogListResponse {
+  logs: CreditTransaction[];
+  total: number;
 }
 
 export interface DownloadPermission {
@@ -1233,5 +1239,61 @@ export async function runCompletenessCheck(): Promise<{ message: string; status:
 export async function getCompletenessStatus(): Promise<CheckStatus> {
   const res = await authFetch('/api/admin/completeness/status', { cache: 'no-store' });
   if (!res.ok) throw new Error('获取检查状态失败');
+  return res.json();
+}
+
+// --- Favorites ---
+
+export interface FavoriteItem {
+  lecture_id: number;
+  title_de: string | null;
+  title_zh: string | null;
+  book_id: number;
+  book_title_de: string;
+  book_ga_number: string | null;
+  lecture_date: string | null;
+  favorited_at: string;
+}
+
+export interface FavoriteListResponse {
+  items: FavoriteItem[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export async function addFavorite(lectureId: number): Promise<{ favorited: boolean }> {
+  const res = await authFetch(`/api/favorites/${lectureId}`, { method: 'POST' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '收藏失败' }));
+    throw new Error(err.detail || '收藏失败');
+  }
+  return res.json();
+}
+
+export async function removeFavorite(lectureId: number): Promise<{ favorited: boolean }> {
+  const res = await authFetch(`/api/favorites/${lectureId}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '取消收藏失败' }));
+    throw new Error(err.detail || '取消收藏失败');
+  }
+  return res.json();
+}
+
+export async function fetchFavorites(page: number = 1, pageSize: number = 20): Promise<FavoriteListResponse> {
+  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+  const res = await authFetch(`/api/favorites?${params}`, { cache: 'no-store' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: '获取收藏列表失败' }));
+    throw new Error(err.detail || '获取收藏列表失败');
+  }
+  return res.json();
+}
+
+export async function fetchFavoriteStatus(lectureId: number): Promise<{ favorited: boolean }> {
+  const res = await authFetch(`/api/favorites/${lectureId}/status`, { cache: 'no-store' });
+  if (!res.ok) {
+    return { favorited: false };
+  }
   return res.json();
 }
